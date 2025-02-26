@@ -1,0 +1,204 @@
+# models/pseudo_siamese.py
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.models as models
+
+class OpticalEncoder(nn.Module):
+    """Encoder for optical images with modified ResNet34 backbone."""
+    
+    def __init__(self, in_channels=3):
+        super(OpticalEncoder, self).__init__()
+        
+        # Load pretrained ResNet34
+        resnet = models.resnet34(pretrained=True)
+        
+        # Modify first conv layer for input channels
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        # Initialize from pretrained
+        if in_channels == 3:
+            self.conv1.weight.data = resnet.conv1.weight.data
+        else:
+            # Initialize new channels with mean of RGB weights
+            self.conv1.weight.data[:, :3, :, :] = resnet.conv1.weight.data
+            if in_channels > 3:
+                for i in range(3, in_channels):
+                    self.conv1.weight.data[:, i:i+1, :, :] = resnet.conv1.weight.data.mean(dim=1, keepdim=True)
+        
+        # Rest of the network
+        self.bn1 = resnet.bn1
+        self.relu = resnet.relu
+        self.maxpool = resnet.maxpool
+        
+        self.layer1 = resnet.layer1
+        self.layer2 = resnet.layer2
+        
+        # Modify stride in layer3 and layer4 as mentioned in the paper
+        self.layer3 = self._modify_layer_stride(resnet.layer3, stride=1)
+        self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
+        
+        self.avgpool = resnet.avgpool
+        self.feature_dim = 512
+        
+    def _modify_layer_stride(self, layer, stride=1):
+        """Modify stride of the first block in a ResNet layer."""
+        layer_copy = layer
+        if hasattr(layer[0], 'conv1'):
+            layer_copy[0].conv1.stride = (stride, stride)
+        if hasattr(layer[0], 'conv2'):
+            layer_copy[0].conv2.stride = (stride, stride)
+        if hasattr(layer[0], 'downsample') and layer[0].downsample is not None:
+            layer_copy[0].downsample[0].stride = (stride, stride)
+        return layer_copy
+    
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+        
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        
+        return x
+
+class SAREncoder(nn.Module):
+    """Encoder for SAR images with modified ResNet34 backbone."""
+    
+    def __init__(self, in_channels=1):
+        super(SAREncoder, self).__init__()
+        
+        # Load pretrained ResNet34
+        resnet = models.resnet34(pretrained=True)
+        
+        # Modify first conv layer for input channels
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        # Initialize from pretrained
+        # For SAR images, initialize with mean of RGB channels
+        self.conv1.weight.data = resnet.conv1.weight.data.mean(dim=1, keepdim=True).repeat(1, in_channels, 1, 1)
+        
+        # Rest of the network
+        self.bn1 = resnet.bn1
+        self.relu = resnet.relu
+        self.maxpool = resnet.maxpool
+        
+        self.layer1 = resnet.layer1
+        self.layer2 = resnet.layer2
+        
+        # Modify stride in layer3 and layer4 as mentioned in the paper
+        self.layer3 = self._modify_layer_stride(resnet.layer3, stride=1)
+        self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
+        
+        self.avgpool = resnet.avgpool
+        self.feature_dim = 512
+        
+    def _modify_layer_stride(self, layer, stride=1):
+        """Modify stride of the first block in a ResNet layer."""
+        layer_copy = layer
+        if hasattr(layer[0], 'conv1'):
+            layer_copy[0].conv1.stride = (stride, stride)
+        if hasattr(layer[0], 'conv2'):
+            layer_copy[0].conv2.stride = (stride, stride)
+        if hasattr(layer[0], 'downsample') and layer[0].downsample is not None:
+            layer_copy[0].downsample[0].stride = (stride, stride)
+        return layer_copy
+    
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+        
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        
+        return x
+
+class Projector(nn.Module):
+    """Projection head for contrastive learning."""
+    
+    def __init__(self, in_dim, hidden_dim=512, out_dim=128):
+        super(Projector, self).__init__()
+        self.layer1 = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(inplace=True)
+        )
+        self.layer2 = nn.Sequential(
+            nn.Linear(hidden_dim, out_dim)
+        )
+        
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        return x
+
+class MultimodalDamageNet(nn.Module):
+    """
+    Multimodal network for damage assessment with optical pre-event and SAR post-event images.
+    Uses supervised contrastive learning.
+    """
+    
+    def __init__(self, optical_channels=3, sar_channels=3, projection_dim=128):
+        super(MultimodalDamageNet, self).__init__()
+        
+        # Encoders
+        self.optical_encoder = OpticalEncoder(in_channels=optical_channels)
+        self.sar_encoder = SAREncoder(in_channels=sar_channels)
+        
+        # Feature dimensions
+        self.optical_dim = self.optical_encoder.feature_dim
+        self.sar_dim = self.sar_encoder.feature_dim
+        
+        # Projection heads
+        self.optical_projector = Projector(self.optical_dim, out_dim=projection_dim)
+        self.sar_projector = Projector(self.sar_dim, out_dim=projection_dim)
+        
+        # Optional: Add classifier for damage assessment
+        self.classifier = nn.Sequential(
+            nn.Linear(self.optical_dim + self.sar_dim, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(256, 4)  # 4 classes: no building, no damage, minor damage, major damage
+        )
+        
+    def forward(self, optical=None, sar=None):
+        result = {}
+        
+        if optical is not None:
+            optical_features = self.optical_encoder(optical)
+            optical_projected = self.optical_projector(optical_features)
+            result['optical_features'] = optical_features
+            result['optical_projected'] = optical_projected
+        
+        if sar is not None:
+            sar_features = self.sar_encoder(sar)
+            sar_projected = self.sar_projector(sar_features)
+            result['sar_features'] = sar_features
+            result['sar_projected'] = sar_projected
+            
+        # If both inputs are provided, compute change score and classification
+        if optical is not None and sar is not None:
+            # Joint features for classification
+            joint_features = torch.cat([result['optical_features'], result['sar_features']], dim=1)
+            result['damage_logits'] = self.classifier(joint_features)
+            
+            # Compute change score (cosine similarity between projected features)
+            optical_proj_norm = F.normalize(result['optical_projected'], dim=1)
+            sar_proj_norm = F.normalize(result['sar_projected'], dim=1)
+            similarity = torch.sum(optical_proj_norm * sar_proj_norm, dim=1)
+            result['change_score'] = 1.0 - similarity  # Higher score means more change
+            
+        return result
