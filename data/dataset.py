@@ -107,6 +107,7 @@ class MultimodalDamageDataset(Dataset):
         
         return img
     
+    # UNSURE YET IF NEEDED
     def extract_patches(self, image, label, size, stride):
         """Extract patches from image and corresponding labels."""
         patches, labels = [], []
@@ -120,28 +121,3 @@ class MultimodalDamageDataset(Dataset):
                 labels.append(patch_label)
                 
         return patches, labels
-    
-    def create_contrastive_pairs(self, pre_img, post_img, damage_label):
-        """
-        Create positive and negative pairs based on damage labels.
-        
-        Positive pairs: Areas with no major damage (0s in damage_label)
-        Negative pairs: Areas with major damage (1s in damage_label)
-        """
-        # Extract patches from images and labels
-        pre_patches, labels = self.extract_patches(pre_img, damage_label, self.crop_size, self.crop_size//2)
-        post_patches, _ = self.extract_patches(post_img, damage_label, self.crop_size, self.crop_size//2)
-        
-        positive_pairs, negative_pairs = [], []
-        
-        # Create pairs based on damage label
-        for pre_patch, post_patch, patch_label in zip(pre_patches, post_patches, labels):
-            # Calculate percentage of damaged pixels
-            damage_percentage = np.mean(patch_label)
-            
-            if damage_percentage < 0.1:  # Less than 10% damaged pixels -> positive pair
-                positive_pairs.append((pre_patch, post_patch))
-            elif damage_percentage > 0.3:  # More than 30% damaged pixels -> negative pair
-                negative_pairs.append((pre_patch, post_patch))
-        
-        return positive_pairs, negative_pairs
