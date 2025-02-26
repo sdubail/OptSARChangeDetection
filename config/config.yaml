@@ -1,0 +1,19 @@
+# configs/default.yaml
+data:
+  root_dir: "/path/to/dfc25_track2_trainval"
+  crop_size: 256
+  num_workers: 4
+
+model:
+  optical_channels: 3  # RGB
+  sar_channels: 3      # Repeated SAR channels for easier processing
+  projection_dim: 128
+
+training:
+  batch_size: 16
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  num_epochs: 100
+  contrastive_weight: 1.0
+  temperature: 0.07
+  output_dir: "output"
