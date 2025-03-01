@@ -1,13 +1,9 @@
 # data/dataset.py
-import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 import rasterio
 from pathlib import Path
-from PIL import Image
-import matplotlib.pyplot as plt
-from . import transforms as T
 
 class MultimodalDamageDataset(Dataset):
     """Dataset for multimodal damage assessment with optical pre-event and SAR post-event images."""
@@ -64,14 +60,11 @@ class MultimodalDamageDataset(Dataset):
         # Load damage label
         label_path = self.root_dir / self.split / 'target' / f"{image_id}_building_damage.tif"
         label = self.load_tiff_data(str(label_path))
-        
-        # Create binary label for location (0: no building, 1: building)
+
+        # Create binary label for change detection on the location (0: no damage, 1: damage)
         loc_label = label.copy()
-        loc_label[loc_label > 0] = 1  # Any building becomes 1
+        loc_label[loc_label > 0] = 1  # Any damage becomes 1
         
-        # Create binary damage label (0: no/minor damage, 1: major damage)
-        damage_label = np.zeros_like(label)
-        damage_label[label == 3] = 1  # Major damage is labeled as 1
         
         # Apply transforms for training
         if self.transform:
@@ -82,16 +75,14 @@ class MultimodalDamageDataset(Dataset):
         pre_img = self._normalize_and_to_tensor(pre_img)
         post_img = self._normalize_and_to_tensor(post_img)
         
-        label = torch.from_numpy(label.squeeze()).long()
-        loc_label = torch.from_numpy(loc_label.squeeze()).long()
-        damage_label = torch.from_numpy(damage_label.squeeze()).long()
+        label = torch.from_numpy(label.squeeze().copy()).long()
+        loc_label = torch.from_numpy(loc_label.squeeze().copy()).long()
         
         return {
             'pre_image': pre_img,
             'post_image': post_img,
             'label': label,
             'loc_label': loc_label,
-            'damage_label': damage_label,
             'image_id': image_id
         }
     

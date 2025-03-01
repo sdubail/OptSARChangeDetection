@@ -2,15 +2,13 @@
 import argparse
 import yaml
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from pathlib import Path
-
 from data.dataset import MultimodalDamageDataset
 from data.transforms import get_transform
 from models.pseudo_siamese import MultimodalDamageNet
-from losses.supervised_contrastive_loss import CombinedLoss
+from losses.contrastive_loss import SupervisedContrastiveLoss
 from trainer.trainer import Trainer
 
 def main(args):
@@ -32,7 +30,7 @@ def main(args):
         transform=train_transform,
         crop_size=config['data']['crop_size']
     )
-    
+
     val_dataset = MultimodalDamageDataset(
         root_dir=config['data']['root_dir'],
         split='val',
@@ -64,8 +62,8 @@ def main(args):
     )
     
     # Create loss function
-    criterion = CombinedLoss(
-        contrastive_weight=config['training']['contrastive_weight'],
+    criterion = SupervisedContrastiveLoss(
+        # contrastive_weight=config['training']['contrastive_weight'],
         temperature=config['training']['temperature']
     )
     

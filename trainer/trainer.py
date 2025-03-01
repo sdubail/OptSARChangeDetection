@@ -1,12 +1,7 @@
 # trainer/trainer.py
-import os
-import time
 import torch
-import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
 from tqdm import tqdm
-import numpy as np
 from pathlib import Path
 import logging
 
@@ -100,7 +95,7 @@ class Trainer:
                 pre_images = batch['pre_image'].to(self.device)
                 post_images = batch['post_image'].to(self.device)
                 labels = batch['label'].to(self.device)
-                damage_labels = batch['damage_label'].to(self.device)
+                loc_labels = batch['loc_label'].to(self.device)
                 
                 # Forward pass
                 outputs = self.model(pre_images, post_images)
@@ -108,7 +103,7 @@ class Trainer:
                 # Compute loss
                 loss, batch_metrics = self.criterion(
                     outputs, 
-                    {'label': labels, 'damage_label': damage_labels}
+                    {'label': labels, 'loc_label': loc_labels}
                 )
                 
                 # Backward and optimize
@@ -148,7 +143,7 @@ class Trainer:
                     pre_images = batch['pre_image'].to(self.device)
                     post_images = batch['post_image'].to(self.device)
                     labels = batch['label'].to(self.device)
-                    damage_labels = batch['damage_label'].to(self.device)
+                    loc_labels = batch['loc_label'].to(self.device)
                     
                     # Forward pass
                     outputs = self.model(pre_images, post_images)
@@ -156,7 +151,7 @@ class Trainer:
                     # Compute loss
                     loss, batch_metrics = self.criterion(
                         outputs, 
-                        {'label': labels, 'damage_label': damage_labels}
+                        {'label': labels, 'loc_label': loc_labels}
                     )
                     
                     # Update statistics

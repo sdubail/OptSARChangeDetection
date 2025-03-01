@@ -1,6 +1,6 @@
 # configs/default.yaml
 data:
-  root_dir: "/path/to/dfc25_track2_trainval"
+  root_dir: "dfc25_track2_trainval"
   crop_size: 256
   num_workers: 4
 
