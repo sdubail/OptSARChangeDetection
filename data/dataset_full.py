@@ -1,4 +1,9 @@
 # data/dataset.py
+
+###
+# THIS IS A DATASET CLASS TO LOAD THE FULL IMAGES DIRECTLY FROM DATASET. NO PATCH EXTRACTION HAS BEEN IMPLEMENTED HERE
+###
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -97,18 +102,3 @@ class MultimodalDamageDataset(Dataset):
         img = torch.from_numpy(img.transpose(2, 0, 1))
         
         return img
-    
-    # UNSURE YET IF NEEDED
-    def extract_patches(self, image, label, size, stride):
-        """Extract patches from image and corresponding labels."""
-        patches, labels = [], []
-        h, w = image.shape[:2]
-        
-        for y in range(0, h - size + 1, stride):
-            for x in range(0, w - size + 1, stride):
-                patch = image[y:y+size, x:x+size]
-                patch_label = label[y:y+size, x:x+size]
-                patches.append(patch)
-                labels.append(patch_label)
-                
-        return patches, labels

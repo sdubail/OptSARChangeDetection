@@ -5,13 +5,13 @@ import torch.nn.functional as F
 import torchvision.models as models
 
 class OpticalEncoder(nn.Module):
-    """Encoder for optical images with modified ResNet34 backbone."""
+    """Encoder for optical images with modified ResNet18 backbone."""
     
     def __init__(self, in_channels=3):
         super(OpticalEncoder, self).__init__()
         
-        # Load pretrained ResNet34
-        resnet = models.resnet34(pretrained=True)
+        # Load pretrained ResNet18 instead of ResNet34
+        resnet = models.resnet18(pretrained=True)
         
         # Modify first conv layer for input channels
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -39,7 +39,7 @@ class OpticalEncoder(nn.Module):
         self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
         
         self.avgpool = resnet.avgpool
-        self.feature_dim = 512
+        self.feature_dim = 512  # ResNet18 output dimension
         
     def _modify_layer_stride(self, layer, stride=1):
         """Modify stride of the first block in a ResNet layer."""
@@ -69,13 +69,13 @@ class OpticalEncoder(nn.Module):
         return x
 
 class SAREncoder(nn.Module):
-    """Encoder for SAR images with modified ResNet34 backbone."""
+    """Encoder for SAR images with modified ResNet18 backbone."""
     
     def __init__(self, in_channels=1):
         super(SAREncoder, self).__init__()
         
-        # Load pretrained ResNet34
-        resnet = models.resnet34(pretrained=True)
+        # Load pretrained ResNet18 instead of ResNet34
+        resnet = models.resnet18(pretrained=True)
         
         # Modify first conv layer for input channels
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -97,7 +97,7 @@ class SAREncoder(nn.Module):
         self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
         
         self.avgpool = resnet.avgpool
-        self.feature_dim = 512
+        self.feature_dim = 512  # ResNet18 output dimension
         
     def _modify_layer_stride(self, layer, stride=1):
         """Modify stride of the first block in a ResNet layer."""
@@ -148,7 +148,7 @@ class Projector(nn.Module):
 class MultimodalDamageNet(nn.Module):
     """
     Multimodal network for damage assessment with optical pre-event and SAR post-event images.
-    Uses supervised contrastive learning.
+    Uses contrastive learning.
     """
     
     def __init__(self, optical_channels=3, sar_channels=3, projection_dim=128):
@@ -166,13 +166,7 @@ class MultimodalDamageNet(nn.Module):
         self.optical_projector = Projector(self.optical_dim, out_dim=projection_dim)
         self.sar_projector = Projector(self.sar_dim, out_dim=projection_dim)
         
-        # Optional: Add classifier for damage assessment
-        self.classifier = nn.Sequential(
-            nn.Linear(self.optical_dim + self.sar_dim, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.5),
-            nn.Linear(256, 4)  # 4 classes: no building, no damage, minor damage, major damage
-        )
+        # No classifier is needed for pure contrastive learning
         
     def forward(self, optical=None, sar=None):
         result = {}
@@ -182,6 +176,10 @@ class MultimodalDamageNet(nn.Module):
             optical_projected = self.optical_projector(optical_features)
             result['optical_features'] = optical_features
             result['optical_projected'] = optical_projected
+            
+            # Rename keys for compatibility with patch-based approach
+            result['pre_features'] = optical_features
+            result['pre_projected'] = optical_projected
         
         if sar is not None:
             sar_features = self.sar_encoder(sar)
@@ -189,12 +187,12 @@ class MultimodalDamageNet(nn.Module):
             result['sar_features'] = sar_features
             result['sar_projected'] = sar_projected
             
-        # If both inputs are provided, compute change score and classification
-        if optical is not None and sar is not None:
-            # Joint features for classification
-            joint_features = torch.cat([result['optical_features'], result['sar_features']], dim=1)
-            result['damage_logits'] = self.classifier(joint_features)
+            # Rename keys for compatibility with patch-based approach
+            result['post_features'] = sar_features
+            result['post_projected'] = sar_projected
             
+        # If both inputs are provided, compute change score
+        if optical is not None and sar is not None:
             # Compute change score (cosine similarity between projected features)
             optical_proj_norm = F.normalize(result['optical_projected'], dim=1)
             sar_proj_norm = F.normalize(result['sar_projected'], dim=1)

@@ -7,3 +7,5 @@ matplotlib
 tqdm
 PyYAML
 pathlib
+h5py
+scikit-learn

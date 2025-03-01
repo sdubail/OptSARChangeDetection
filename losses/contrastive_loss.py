@@ -10,18 +10,13 @@ class SupervisedContrastiveLoss(nn.Module):
         super(SupervisedContrastiveLoss, self).__init__()
         self.temperature = temperature
         
-    def forward(self, outputs, targets):
+    def forward(self, optical_features, sar_features, is_positive):
         """
         Args:
-            outputs : dictionary with keys :
-                - "optical_projected": Features from optical encoder (batch_size, feature_dim)
-                - "sar_projected": Features from SAR encoder (batch_size, feature_dim)
-            loc_labels: Binary labels (0: no damage, 1: damage) (batch_size,)
+            optical_features: Features from optical encoder (batch_size, feature_dim)
+            sar_features: Features from SAR encoder (batch_size, feature_dim)
+            is_positive: Binary labels (0: damage = negative pair, 1: no damage = positive pair) (batch_size,)
         """
-        optical_features = outputs['optical_projected'],
-        sar_features = outputs['sar_projected']
-        loc_labels = targets["loc_label"]
-
         # Normalize features
         optical_features = F.normalize(optical_features, dim=1)
         sar_features = F.normalize(sar_features, dim=1)
@@ -32,9 +27,9 @@ class SupervisedContrastiveLoss(nn.Module):
         # Scale by temperature
         similarity = similarity / self.temperature
         
-        # For undamaged pairs (label=0): maximize similarity (minimize distance)
-        # For damaged pairs (label=1): minimize similarity (maximize distance)
-        target_similarity = 1.0 - loc_labels.float()  # 1 for undamaged, 0 for damaged
+        # For undamaged pairs (label=1 - positive pair): maximize similarity (minimize distance)
+        # For damaged pairs (label=0 - negative pair): minimize similarity (maximize distance)
+        target_similarity = is_positive
         
         # Binary cross-entropy loss
         loss = -target_similarity * torch.log(torch.sigmoid(similarity)) - \
