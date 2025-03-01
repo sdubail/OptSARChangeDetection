@@ -10,13 +10,16 @@ class SupervisedContrastiveLoss(nn.Module):
         super(SupervisedContrastiveLoss, self).__init__()
         self.temperature = temperature
         
-    def forward(self, optical_features, sar_features, targets):
+    def forward(self, outputs, targets):
         """
         Args:
-            optical_features: Features from optical encoder (batch_size, feature_dim)
-            sar_features: Features from SAR encoder (batch_size, feature_dim)
+            outputs : dictionary with keys :
+                - "optical_projected": Features from optical encoder (batch_size, feature_dim)
+                - "sar_projected": Features from SAR encoder (batch_size, feature_dim)
             loc_labels: Binary labels (0: no damage, 1: damage) (batch_size,)
         """
+        optical_features = outputs['optical_projected'],
+        sar_features = outputs['sar_projected']
         loc_labels = targets["loc_label"]
 
         # Normalize features
