@@ -28,7 +28,7 @@ The project workflow consists of three main steps:
 
 1. **Data preprocessing** - Extracts and prepares training patches
 2. **Model training** - Trains the contrastive learning model
-3. **Inference** - Applies the model to detect changes
+3. **Inference** - Applies the model to detect changes (TODO)
 
 ## 📁 Project Structure and Usage
 
