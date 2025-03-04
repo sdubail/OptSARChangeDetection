@@ -4,7 +4,7 @@ import argparse
 import torch
 import torch.optim as optim
 import yaml
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 # Import the preprocessed patch dataset
 from data.dataset_patches import PreprocessedPatchDataset
@@ -51,12 +51,39 @@ def main(args):
     print(f"  - Positive ratio: {val_dataset.get_pos_neg_ratio():.2f}")
 
     # Create data loaders
+
+    # Taking into account class imbalance - this is experimental ...
+    pos_weight = 1 / train_dataset.get_pos_neg_ratio()
+    neg_weight = 1 / (1 - train_dataset.get_pos_neg_ratio())
+
+    # Assign weights to all samples
+    weights = [
+        pos_weight if meta["is_positive"] else neg_weight
+        for meta in train_dataset.metadata
+    ]
+
+    # Create a sampler
+    sampler = WeightedRandomSampler(weights, len(weights))
+
+    # Additionally : For distributed GPUS :
+    # from torch.utils.data.distributed import DistributedSampler
+
+    # # Create sampler for distributing data across GPUs
+    # sampler = DistributedSampler(
+    #     dataset,
+    #     num_replicas=world_size,  # Number of GPUs
+    #     rank=local_rank,  # Current GPU ID
+    #     shuffle=True
+    # )
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        shuffle=True,
+        sampler=sampler,
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2,
     )
 
     val_loader = DataLoader(
@@ -65,6 +92,8 @@ def main(args):
         shuffle=False,
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2,
     )
 
     # Create model with your original architecture (minus classification head)
