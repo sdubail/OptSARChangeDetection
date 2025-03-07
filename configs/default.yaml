@@ -33,4 +33,3 @@ training:
 # Warmup parameters
 warmup:
   warmup_epochs: 2
-  warmup_ratio: 0.3

@@ -85,7 +85,6 @@ def main(args):
     train_dataset, 
     batch_size=config["training"]["batch_size"], 
     warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
-    warmup_ratio=config["warmup"]["warmup_ratio"]  # Adjust ratio of positive samples during warmup
     )
     
     train_loader = DataLoader(
