@@ -12,6 +12,11 @@ class OpticalEncoder(nn.Module):
 
         # Load pretrained ResNet18 instead of ResNet34
         resnet = models.resnet18(pretrained=True)
+        
+        # Freeze all layers before layer4
+        for name, param in resnet.named_parameters():
+            if not any(layer in name for layer in ['layer4', 'fc']):
+                param.requires_grad = False
 
         # Modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
@@ -29,7 +34,11 @@ class OpticalEncoder(nn.Module):
                     self.conv1.weight.data[:, i : i + 1, :, :] = (
                         resnet.conv1.weight.data.mean(dim=1, keepdim=True)
                     )
-
+                    
+        # freeze the first layer
+        for param in self.conv1.parameters():
+            param.requires_grad = False
+        
         # Rest of the network
         self.bn1 = resnet.bn1
         self.relu = resnet.relu
@@ -81,6 +90,11 @@ class SAREncoder(nn.Module):
 
         # Load pretrained ResNet18 instead of ResNet34
         resnet = models.resnet18(pretrained=True)
+        
+        # Freeze all layers before layer4
+        for name, param in resnet.named_parameters():
+            if not any(layer in name for layer in ['layer4', 'fc']):
+                param.requires_grad = False 
 
         # Modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
@@ -93,6 +107,10 @@ class SAREncoder(nn.Module):
             dim=1, keepdim=True
         ).repeat(1, in_channels, 1, 1)
 
+        # freeze the first layer
+        for param in self.conv1.parameters():
+            param.requires_grad = False
+            
         # Rest of the network
         self.bn1 = resnet.bn1
         self.relu = resnet.relu

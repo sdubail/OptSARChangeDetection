@@ -115,6 +115,11 @@ def main(args):
         sar_channels=config["model"]["sar_channels"],
         projection_dim=config["model"]["projection_dim"],
     )
+    
+    # recap of the model architecture
+    print("Model architecture:")
+    for name, param in model.named_parameters():
+        print(f"{name}: requires_grad={param.requires_grad}")
 
     # Create simplified contrastive loss function
     criterion = SupervisedContrastiveLoss(
