@@ -227,3 +227,22 @@ class MultimodalDamageNet(nn.Module):
             result["change_score"] = 1.0 - similarity  # Higher score means more change
 
         return result
+    
+    def save(self, path):
+        """
+        Save the model's weights.
+        Args:
+            path (str): path where to save the model
+        """
+        torch.save(self.state_dict(), path)
+        print(f"Model saved to {path}")
+
+    def load(self, path, device="cuda"):
+        """
+        Load the model's weights.   
+        Args:
+            path (str): path to the saved model
+            device (str): device where to load the model 
+        """
+        self.load_state_dict(torch.load(path, map_location=device))
+        print(f"Model loaded from {path}")

@@ -151,6 +151,7 @@ def main(args):
         output_dir=config["training"]["output_dir"],
         save_best=True,
         log_interval=args.log_interval,
+        loading_checkpoint=config["training"]["loading_checkpoint"],
     )
 
     # Train model

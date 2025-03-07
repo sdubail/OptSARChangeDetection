@@ -25,6 +25,7 @@ class ContrastiveTrainer:
         output_dir="output",
         save_best=True,
         log_interval=10,
+        loading_checkpoint=False
     ):
         """
         Args:
@@ -65,6 +66,15 @@ class ContrastiveTrainer:
             ],
         )
         self.logger = logging.getLogger(__name__)
+        
+        # if load_path is provided, resume training
+        if loading_checkpoint:
+            checkpoint_path = self.output_dir / "best_model.pth"  # Or the correct checkpoint file
+            if checkpoint_path.exists():
+                self.start_epoch, best_val_loss, best_val_acc = self.load_checkpoint(checkpoint_path)
+                self.logger.info(f"Resumed training from epoch {self.start_epoch}, best val loss: {best_val_loss}, best val acc: {best_val_acc}")
+            else:
+                self.logger.warning(f"No checkpoint found at {checkpoint_path}, starting training from scratch.")
 
     def train(self):
         """Train the model."""
@@ -248,6 +258,27 @@ class ContrastiveTrainer:
             torch.save(checkpoint, self.output_dir / "best_model.pth")
         else:
             torch.save(checkpoint, self.output_dir / f"checkpoint_epoch_{epoch+1}.pth")
+
+    def load_checkpoint(self, checkpoint_path):
+        """Load model checkpoint."""
+        
+        # Load checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+
+        # Load model state
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+
+        # Load optimizer state
+        if "optimizer_state_dict" in checkpoint:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        # Load scheduler state
+        if self.scheduler is not None and "scheduler_state_dict" in checkpoint:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+        # Returns epoch, val_loss, val_acc
+        return checkpoint.get("epoch", 0), checkpoint.get("val_loss", None), checkpoint.get("val_acc", None)
+
 
     def _plot_training_curves(self, train_losses, val_losses, train_accs, val_accs):
         """Plot training curves."""
