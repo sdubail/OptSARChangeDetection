@@ -7,16 +7,17 @@ import torchvision.models as models
 class OpticalEncoder(nn.Module):
     """Encoder for optical images with modified ResNet18 backbone."""
 
-    def __init__(self, in_channels=3):
+    def __init__(self, freeze_resnet=True, in_channels=3):
         super(OpticalEncoder, self).__init__()
 
         # Load pretrained ResNet18 instead of ResNet34
         resnet = models.resnet18(pretrained=True)
         
         # Freeze all layers before layer4
-        for name, param in resnet.named_parameters():
-            if not any(layer in name for layer in ['layer4', 'fc']):
-                param.requires_grad = False
+        if freeze_resnet:
+            for name, param in resnet.named_parameters():
+                if not any(layer in name for layer in ['layer4', 'fc']):
+                    param.requires_grad = False
 
         # Modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
@@ -36,8 +37,9 @@ class OpticalEncoder(nn.Module):
                     )
                     
         # freeze the first layer
-        for param in self.conv1.parameters():
-            param.requires_grad = False
+        if freeze_resnet:
+            for param in self.conv1.parameters():
+                param.requires_grad = False
         
         # Rest of the network
         self.bn1 = resnet.bn1
@@ -85,16 +87,17 @@ class OpticalEncoder(nn.Module):
 class SAREncoder(nn.Module):
     """Encoder for SAR images with modified ResNet18 backbone."""
 
-    def __init__(self, in_channels=1):
+    def __init__(self, freeze_resnet=True, in_channels=1):
         super(SAREncoder, self).__init__()
 
         # Load pretrained ResNet18 instead of ResNet34
         resnet = models.resnet18(pretrained=True)
         
         # Freeze all layers before layer4
-        for name, param in resnet.named_parameters():
-            if not any(layer in name for layer in ['layer4', 'fc']):
-                param.requires_grad = False 
+        if freeze_resnet:
+            for name, param in resnet.named_parameters():
+                if not any(layer in name for layer in ['layer4', 'fc']):
+                    param.requires_grad = False 
 
         # Modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
@@ -108,8 +111,9 @@ class SAREncoder(nn.Module):
         ).repeat(1, in_channels, 1, 1)
 
         # freeze the first layer
-        for param in self.conv1.parameters():
-            param.requires_grad = False
+        if freeze_resnet:
+            for param in self.conv1.parameters():
+                param.requires_grad = False
             
         # Rest of the network
         self.bn1 = resnet.bn1
@@ -178,12 +182,12 @@ class MultimodalDamageNet(nn.Module):
     Uses contrastive learning.
     """
 
-    def __init__(self, optical_channels=3, sar_channels=3, projection_dim=128):
+    def __init__(self, freeze_resnet=True, optical_channels=3, sar_channels=3, projection_dim=128):
         super(MultimodalDamageNet, self).__init__()
 
         # Encoders
-        self.optical_encoder = OpticalEncoder(in_channels=optical_channels)
-        self.sar_encoder = SAREncoder(in_channels=sar_channels)
+        self.optical_encoder = OpticalEncoder(freeze_resnet=freeze_resnet, in_channels=optical_channels)
+        self.sar_encoder = SAREncoder(freeze_resnet=freeze_resnet, in_channels=sar_channels)
 
         # Feature dimensions
         self.optical_dim = self.optical_encoder.feature_dim

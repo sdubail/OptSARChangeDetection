@@ -111,6 +111,7 @@ def main(args):
 
     # Create model with your original architecture (minus classification head)
     model = MultimodalDamageNet(
+        freeze_resnet=config["model"]["freeze_resnet"],
         optical_channels=config["model"]["optical_channels"],
         sar_channels=config["model"]["sar_channels"],
         projection_dim=config["model"]["projection_dim"],
