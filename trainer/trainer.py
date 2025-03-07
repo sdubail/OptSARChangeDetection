@@ -127,7 +127,14 @@ class ContrastiveTrainer:
         self._plot_training_curves(
             train_losses, val_losses, train_accuracies, val_accuracies
         )
+        # save training curves as numpy arrays
+        np.save(self.output_dir / "train_losses.npy", np.array(train_losses))
+        np.save(self.output_dir / "val_losses.npy", np.array(val_losses))
+        np.save(self.output_dir / "train_accuracies.npy", np.array(train_accuracies))
+        np.save(self.output_dir / "val_accuracies.npy", np.array(val_accuracies))
 
+        # Save 
+        # log best validation loss
         self.logger.info(
             f"Training completed. Best validation loss: {best_val_loss:.4f}"
         )
