@@ -35,6 +35,8 @@ def main(args):
         split="train",
         transform=train_transform,
         cache_size=args.cache_size,
+        subset_fraction=args.subset_fraction,
+        seed=args.subset_seed,
     )
 
     val_dataset = PreprocessedPatchDataset(
@@ -42,6 +44,8 @@ def main(args):
         split="val",
         transform=val_transform,
         cache_size=args.cache_size,
+        subset_fraction=args.subset_fraction,
+        seed=args.subset_seed,
     )
 
     # Print dataset statistics
@@ -53,17 +57,17 @@ def main(args):
     # Create data loaders
 
     # Taking into account class imbalance - this is experimental ...
-    pos_weight = 1 / train_dataset.get_pos_neg_ratio()
-    neg_weight = 1 / (1 - train_dataset.get_pos_neg_ratio())
+    # pos_weight = 1 / train_dataset.get_pos_neg_ratio()
+    # neg_weight = 1 / (1 - train_dataset.get_pos_neg_ratio())
 
-    # Assign weights to all samples
-    weights = [
-        pos_weight if meta["is_positive"] else neg_weight
-        for meta in train_dataset.metadata
-    ]
+    # # Assign weights to all samples
+    # weights = [
+    #     pos_weight if meta["is_positive"] else neg_weight
+    #     for meta in train_dataset.metadata
+    # ]
 
-    # Create a sampler
-    sampler = WeightedRandomSampler(weights, len(weights))
+    # # Create a sampler
+    # sampler = WeightedRandomSampler(weights, len(weights))
 
     # Additionally : For distributed GPUS :
     # from torch.utils.data.distributed import DistributedSampler
@@ -79,7 +83,8 @@ def main(args):
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        sampler=sampler,
+        # sampler=sampler,
+        shuffle=True,
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
         persistent_workers=True,
@@ -171,6 +176,15 @@ if __name__ == "__main__":
         type=int,
         default=10,
         help="How often to log training metrics (in batches)",
+    )
+    parser.add_argument(
+        "--subset_fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of dataset to use (0.0-1.0)",
+    )
+    parser.add_argument(
+        "--subset_seed", type=int, default=42, help="Random seed for subset selection"
     )
     args = parser.parse_args()
 

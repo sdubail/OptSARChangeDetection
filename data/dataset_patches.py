@@ -19,7 +19,15 @@ logger = logging.getLogger(__name__)
 class PreprocessedPatchDataset(Dataset):
     """Dataset for loading pre-processed patches for contrastive learning."""
 
-    def __init__(self, patch_dir, split="train", transform=None, cache_size=100):
+    def __init__(
+        self,
+        patch_dir,
+        split="train",
+        transform=None,
+        cache_size=100,
+        subset_fraction=1.0,
+        seed=42,
+    ):
         """
         Args:
             patch_dir: Directory containing pre-processed patches
@@ -57,6 +65,17 @@ class PreprocessedPatchDataset(Dataset):
         else:
             self.summary = None
             logger.info(f"Loaded {split} dataset with {len(self.metadata)} patches")
+
+        if subset_fraction < 1.0:
+            # Create deterministic subset
+            rng = np.random.RandomState(seed)
+            indices = np.arange(len(self.metadata))
+            rng.shuffle(indices)
+            subset_size = int(len(indices) * subset_fraction)
+            subset_indices = indices[:subset_size]
+
+            # Filter metadata
+            self.metadata = [self.metadata[i] for i in subset_indices]
 
     def __len__(self):
         return len(self.metadata)
