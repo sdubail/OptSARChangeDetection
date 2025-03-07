@@ -27,3 +27,8 @@ training:
   num_epochs: 1
   temperature: 0.07           # Temperature for InfoNCE loss
   output_dir: "output/patch_contrastive"
+
+# Warmup parameters
+warmup:
+  warmup_epochs: 2
+  warmup_ratio: 0.3

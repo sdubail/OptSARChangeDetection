@@ -14,6 +14,7 @@ from models.pseudo_siamese import (
     MultimodalDamageNet,  # Using your original model with minimal changes
 )
 from trainer.trainer import ContrastiveTrainer
+from sampler.sampler import WarmupSampler
 
 
 def main(args):
@@ -80,11 +81,18 @@ def main(args):
     #     shuffle=True
     # )
 
+    sampler = WarmupSampler(
+    train_dataset, 
+    batch_size=config["training"]["batch_size"], 
+    warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
+    warmup_ratio=config["warmup"]["warmup_ratio"]  # Adjust ratio of positive samples during warmup
+    )
+    
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        # sampler=sampler,
-        shuffle=True,
+        sampler=sampler,
+        shuffle=False,  # Important: set to False when using a custom sampler
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
         persistent_workers=True,

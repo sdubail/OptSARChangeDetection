@@ -77,6 +77,10 @@ class ContrastiveTrainer:
         val_accuracies = []
 
         for epoch in range(self.num_epochs):
+            # Update the sampler with current epoch
+            if hasattr(self.train_loader.sampler, 'set_epoch'):
+                self.train_loader.sampler.set_epoch(epoch)
+    
             # Training
             train_loss, train_acc = self._train_epoch(epoch)
             train_losses.append(train_loss)
