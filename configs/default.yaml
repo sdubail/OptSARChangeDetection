@@ -16,7 +16,7 @@ max_pairs_per_image: 500      # Maximum number of pairs to extract per image
 # Model parameters
 model:
   optical_channels: 3         # RGB for optical images
-  sar_channels: 3             # Repeated SAR channels for easier processing
+  sar_channels: 1
   projection_dim: 128         # Dimension of contrastive projection space
   freeze_resnet: False         # Freeze ResNet backbone
 

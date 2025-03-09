@@ -12,11 +12,11 @@ class OpticalEncoder(nn.Module):
 
         # Load pretrained ResNet18 instead of ResNet34
         resnet = models.resnet18(pretrained=True)
-        
+
         # Freeze all layers before layer4
         if freeze_resnet:
             for name, param in resnet.named_parameters():
-                if not any(layer in name for layer in ['layer4', 'fc']):
+                if not any(layer in name for layer in ["layer4", "fc"]):
                     param.requires_grad = False
 
         # Modify first conv layer for input channels
@@ -35,12 +35,12 @@ class OpticalEncoder(nn.Module):
                     self.conv1.weight.data[:, i : i + 1, :, :] = (
                         resnet.conv1.weight.data.mean(dim=1, keepdim=True)
                     )
-                    
+
         # freeze the first layer
         if freeze_resnet:
             for param in self.conv1.parameters():
                 param.requires_grad = False
-        
+
         # Rest of the network
         self.bn1 = resnet.bn1
         self.relu = resnet.relu
@@ -92,12 +92,12 @@ class SAREncoder(nn.Module):
 
         # Load pretrained ResNet18 instead of ResNet34
         resnet = models.resnet18(pretrained=True)
-        
+
         # Freeze all layers before layer4
         if freeze_resnet:
             for name, param in resnet.named_parameters():
-                if not any(layer in name for layer in ['layer4', 'fc']):
-                    param.requires_grad = False 
+                if not any(layer in name for layer in ["layer4", "fc"]):
+                    param.requires_grad = False
 
         # Modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
@@ -114,7 +114,7 @@ class SAREncoder(nn.Module):
         if freeze_resnet:
             for param in self.conv1.parameters():
                 param.requires_grad = False
-            
+
         # Rest of the network
         self.bn1 = resnet.bn1
         self.relu = resnet.relu
@@ -182,12 +182,18 @@ class MultimodalDamageNet(nn.Module):
     Uses contrastive learning.
     """
 
-    def __init__(self, freeze_resnet=True, optical_channels=3, sar_channels=3, projection_dim=128):
+    def __init__(
+        self, freeze_resnet=True, optical_channels=3, sar_channels=1, projection_dim=128
+    ):
         super(MultimodalDamageNet, self).__init__()
 
         # Encoders
-        self.optical_encoder = OpticalEncoder(freeze_resnet=freeze_resnet, in_channels=optical_channels)
-        self.sar_encoder = SAREncoder(freeze_resnet=freeze_resnet, in_channels=sar_channels)
+        self.optical_encoder = OpticalEncoder(
+            freeze_resnet=freeze_resnet, in_channels=optical_channels
+        )
+        self.sar_encoder = SAREncoder(
+            freeze_resnet=freeze_resnet, in_channels=sar_channels
+        )
 
         # Feature dimensions
         self.optical_dim = self.optical_encoder.feature_dim
@@ -231,7 +237,7 @@ class MultimodalDamageNet(nn.Module):
             result["change_score"] = 1.0 - similarity  # Higher score means more change
 
         return result
-    
+
     def save(self, path):
         """
         Save the model's weights.
@@ -243,10 +249,10 @@ class MultimodalDamageNet(nn.Module):
 
     def load(self, path, device="cuda"):
         """
-        Load the model's weights.   
+        Load the model's weights.
         Args:
             path (str): path to the saved model
-            device (str): device where to load the model 
+            device (str): device where to load the model
         """
         self.load_state_dict(torch.load(path, map_location=device))
         print(f"Model loaded from {path}")
