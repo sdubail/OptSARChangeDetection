@@ -18,7 +18,7 @@ model:
   optical_channels: 3         # RGB for optical images
   sar_channels: 3             # Repeated SAR channels for easier processing
   projection_dim: 128         # Dimension of contrastive projection space
-  freeze_resnet: True         # Freeze ResNet backbone
+  freeze_resnet: False         # Freeze ResNet backbone
 
 # Training parameters
 training:
