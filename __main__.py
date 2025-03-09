@@ -1,5 +1,6 @@
 # main_contrastive.py
 import argparse
+from pprint import pprint
 
 import torch
 import torch.optim as optim
@@ -13,14 +14,16 @@ from losses.contrastive_loss import SupervisedContrastiveLoss
 from models.pseudo_siamese import (
     MultimodalDamageNet,  # Using your original model with minimal changes
 )
-from trainer.trainer import ContrastiveTrainer
 from sampler.sampler import WarmupSampler
+from trainer.trainer import ContrastiveTrainer
 
 
 def main(args):
     # Load configuration
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+
+    pprint(f"Using config: {config}")
 
     # Set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -82,11 +85,11 @@ def main(args):
     # )
 
     sampler = WarmupSampler(
-    train_dataset, 
-    batch_size=config["training"]["batch_size"], 
-    warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
+        train_dataset,
+        batch_size=config["training"]["batch_size"],
+        warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
     )
-    
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
@@ -115,7 +118,7 @@ def main(args):
         sar_channels=config["model"]["sar_channels"],
         projection_dim=config["model"]["projection_dim"],
     )
-    
+
     # recap of the model architecture
     print("Model architecture:")
     for name, param in model.named_parameters():
