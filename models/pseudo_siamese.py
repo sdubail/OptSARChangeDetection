@@ -12,8 +12,10 @@ class OpticalEncoder(nn.Module):
 
         # Load pretrained ResNet18 or ResNet34
         if resnet_version == 18:
+            print("Loading resnet 18")
             resnet = models.resnet18(pretrained=True)
         elif resnet_version == 34:
+            print("Loading resnet 34")
             resnet = models.resnet34(pretrained=True)
         else:
             raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
@@ -97,8 +99,10 @@ class SAREncoder(nn.Module):
 
         # Load pretrained ResNet18 or ResNet34
         if resnet_version == 18:
+            print("Loading resnet 18")
             resnet = models.resnet18(pretrained=True)
         elif resnet_version == 34:
+            print("Loading resnet 34")
             resnet = models.resnet34(pretrained=True)
         else:
             raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
