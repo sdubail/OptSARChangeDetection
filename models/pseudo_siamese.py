@@ -7,11 +7,16 @@ import torchvision.models as models
 class OpticalEncoder(nn.Module):
     """Encoder for optical images with modified ResNet18 backbone."""
 
-    def __init__(self, freeze_resnet=True, in_channels=3):
+    def __init__(self, resnet_version=18, freeze_resnet=True, in_channels=3):
         super(OpticalEncoder, self).__init__()
 
-        # Load pretrained ResNet18 instead of ResNet34
-        resnet = models.resnet18(pretrained=True)
+        # Load pretrained ResNet18 or ResNet34
+        if resnet_version == 18:
+            resnet = models.resnet18(pretrained=True)
+        elif resnet_version == 34:
+            resnet = models.resnet34(pretrained=True)
+        else:
+            raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
 
         # Freeze all layers before layer4
         if freeze_resnet:
@@ -87,11 +92,16 @@ class OpticalEncoder(nn.Module):
 class SAREncoder(nn.Module):
     """Encoder for SAR images with modified ResNet18 backbone."""
 
-    def __init__(self, freeze_resnet=True, in_channels=1):
+    def __init__(self, resnet_version=18, freeze_resnet=True, in_channels=1):
         super(SAREncoder, self).__init__()
 
-        # Load pretrained ResNet18 instead of ResNet34
-        resnet = models.resnet18(pretrained=True)
+        # Load pretrained ResNet18 or ResNet34
+        if resnet_version == 18:
+            resnet = models.resnet18(pretrained=True)
+        elif resnet_version == 34:
+            resnet = models.resnet34(pretrained=True)
+        else:
+            raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
 
         # Freeze all layers before layer4
         if freeze_resnet:
@@ -183,16 +193,25 @@ class MultimodalDamageNet(nn.Module):
     """
 
     def __init__(
-        self, freeze_resnet=True, optical_channels=3, sar_channels=1, projection_dim=128
+        self,
+        resnet_version=18,
+        freeze_resnet=True,
+        optical_channels=3,
+        sar_channels=1,
+        projection_dim=128,
     ):
         super(MultimodalDamageNet, self).__init__()
 
         # Encoders
         self.optical_encoder = OpticalEncoder(
-            freeze_resnet=freeze_resnet, in_channels=optical_channels
+            resnet_version=resnet_version,
+            freeze_resnet=freeze_resnet,
+            in_channels=optical_channels,
         )
         self.sar_encoder = SAREncoder(
-            freeze_resnet=freeze_resnet, in_channels=sar_channels
+            resnet_version=resnet_version,
+            freeze_resnet=freeze_resnet,
+            in_channels=sar_channels,
         )
 
         # Feature dimensions
