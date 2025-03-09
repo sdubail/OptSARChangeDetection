@@ -133,10 +133,11 @@ class PreprocessedPatchDataset(Dataset):
             label = transformed["label"]
 
         # Convert to tensor if not already
-        if not isinstance(pre_patch, torch.Tensor):
-            pre_patch = self._to_tensor(pre_patch)
-            post_patch = self._to_tensor(post_patch)
-            label = torch.from_numpy(label.copy()).long()
+        # if not isinstance(pre_patch, torch.Tensor):
+        #     print("normalising")
+        pre_patch = self._to_tensor_optical(pre_patch)
+        post_patch = self._to_tensor_sar(post_patch)
+        label = torch.from_numpy(label.copy()).long()
 
         return {
             "pre_patch": pre_patch,
@@ -149,15 +150,45 @@ class PreprocessedPatchDataset(Dataset):
             "damage_ratio": meta["damage_ratio"],
         }
 
-    def _to_tensor(self, img):
-        """Convert image to tensor and normalize."""
+    def _to_tensor_optical(self, img):
+        """Convert optical image to tensor with per-channel normalization."""
         # Convert to float32
         img = img.astype(np.float32)
 
-        # Normalize
-        img = (img - img.mean()) / (img.std() + 1e-8)
+        # Per-channel normalization (vectorized)
+        # Calculate mean and std along spatial dimensions (0,1) for each channel
+        means = img.mean(axis=(0, 1), keepdims=True)
+        stds = img.std(axis=(0, 1), keepdims=True) + 1e-8
+        img = (img - means) / stds
 
         # Convert to tensor with channel-first format (HWC -> CHW)
+        img = torch.from_numpy(img.transpose(2, 0, 1))
+
+        return img
+
+    def _to_tensor_sar(self, img):
+        """Convert SAR image to tensor with appropriate preprocessing."""
+        # Convert to float32
+        img = img.astype(np.float32)
+
+        # Check if it's three identical channels (likely repeated grayscale)
+        if (
+            img.shape[2] == 3
+            and np.allclose(img[:, :, 0], img[:, :, 1])
+            and np.allclose(img[:, :, 0], img[:, :, 2])
+        ):
+            # Extract just one channel to avoid redundancy
+            img = img[:, :, 0:1]
+
+        # Apply log transformation to all channels at once
+        img = np.log1p(img)  # natural log of (1 + x)
+
+        # Normalize each channel (vectorized)
+        means = img.mean(axis=(0, 1), keepdims=True)
+        stds = img.std(axis=(0, 1), keepdims=True) + 1e-8
+        img = (img - means) / stds
+
+        # Convert to tensor
         img = torch.from_numpy(img.transpose(2, 0, 1))
 
         return img
