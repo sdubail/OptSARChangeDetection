@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim as optim
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import balanced_accuracy_score
 from tqdm import tqdm
 
 
@@ -194,7 +194,7 @@ class ContrastiveTrainer:
         # Calculate accuracy if we have predictions
         epoch_acc = 0
         if all_preds and all_targets:
-            epoch_acc = accuracy_score(all_targets, all_preds)
+            epoch_acc = balanced_accuracy_score(all_targets, all_preds)
 
         return epoch_loss, epoch_acc
 
@@ -243,7 +243,7 @@ class ContrastiveTrainer:
         # Calculate accuracy if we have predictions
         epoch_acc = 0
         if all_preds and all_targets:
-            epoch_acc = accuracy_score(all_targets, all_preds)
+            epoch_acc = balanced_accuracy_score(all_targets, all_preds)
 
         return epoch_loss, epoch_acc
 
