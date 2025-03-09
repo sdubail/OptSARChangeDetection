@@ -72,6 +72,7 @@ class AsyncDataLoader:
 
                 # Normalize images for display
                 pre_patch_norm = self.normalize_for_display(pre_patch)
+                print("SHAPE:", post_patch.shape)
                 post_patch_norm = self.normalize_for_display(post_patch)
 
                 # Convert to 8-bit for PIL
