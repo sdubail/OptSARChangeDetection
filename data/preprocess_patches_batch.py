@@ -178,7 +178,8 @@ class PatchExtractor:
                     continue
 
                 # Calculate damage ratio
-                damage_pixels = np.sum(label_patch_flat > 0)
+                label_patch_flat_binary = np.where(label_patch_flat <= 1, 0, 1)
+                damage_pixels = np.sum(label_patch_flat_binary > 0)
                 total_valid_pixels = np.sum(~np.isnan(label_patch_flat))
 
                 if total_valid_pixels == 0:
@@ -617,7 +618,7 @@ def main():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=20,
+        default=100,
         help="Number of images to process before saving a batch",
     )
     args = parser.parse_args()
