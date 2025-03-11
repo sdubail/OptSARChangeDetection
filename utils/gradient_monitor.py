@@ -47,6 +47,10 @@ class GradientMonitor:
 
         # Important layers to track (adapt according to your model)
         self.tracked_modules = [
+            ("optical_encoder.layer2", "Optical Encoder (Layer 2)"),
+            ("sar_encoder.layer2", "SAR Encoder (Layer 2)"),
+            ("optical_encoder.layer3", "Optical Encoder (Layer 3)"),
+            ("sar_encoder.layer3", "SAR Encoder (Layer 3)"),
             ("optical_encoder.layer4", "Optical Encoder (Layer 4)"),
             ("sar_encoder.layer4", "SAR Encoder (Layer 4)"),
             ("optical_projector.layer1.0", "Optical Projector (FC)"),
