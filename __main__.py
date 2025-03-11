@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 # Import the preprocessed patch dataset
 from data.dataset_patches import PreprocessedPatchDataset
 from data.transforms import get_transform
-from losses.contrastive_loss import SupervisedContrastiveLoss
+from losses.contrastive_loss import InfoNCEContrastiveLoss, SupervisedContrastiveLoss
 from models.pseudo_siamese import (
     MultimodalDamageNet,  # Using your original model with minimal changes
 )
@@ -126,7 +126,11 @@ def main(args):
         print(f"{name}: requires_grad={param.requires_grad}")
 
     # Create simplified contrastive loss function
-    criterion = SupervisedContrastiveLoss(
+    # criterion = SupervisedContrastiveLoss(
+    #     temperature=config["training"].get("temperature", 0.07),
+    # )
+    # Create infoNCE contrastive loss function
+    criterion = InfoNCEContrastiveLoss(
         temperature=config["training"].get("temperature", 0.07),
     )
 
@@ -156,6 +160,7 @@ def main(args):
         save_best=True,
         log_interval=args.log_interval,
         loading_checkpoint=config["training"]["loading_checkpoint"],
+        monitor_gradients=args.monitor_gradients,
     )
 
     # Train model
@@ -203,6 +208,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--subset_seed", type=int, default=42, help="Random seed for subset selection"
+    )
+    parser.add_argument(
+        "--monitor_gradients",
+        action="store_true",
+        help="Enable monitoring and visualization of gradients and activations",
     )
     args = parser.parse_args()
 

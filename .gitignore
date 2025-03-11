@@ -1,6 +1,6 @@
 **/dfc25_track2_trainval
 **/__pycache__/
 .DS_Store
-**/processed_patches
+**/processed_patches**
 **/output
 .vscode

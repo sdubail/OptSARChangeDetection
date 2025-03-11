@@ -8,6 +8,8 @@ import torch.optim as optim
 from sklearn.metrics import balanced_accuracy_score
 from tqdm import tqdm
 
+from utils.gradient_monitor import GradientMonitor
+
 
 class ContrastiveTrainer:
     """Trainer for patch-based contrastive learning for change detection."""
@@ -25,7 +27,8 @@ class ContrastiveTrainer:
         output_dir="output",
         save_best=True,
         log_interval=10,
-        loading_checkpoint=False
+        loading_checkpoint=False,
+        monitor_gradients=False,
     ):
         """
         Args:
@@ -40,6 +43,7 @@ class ContrastiveTrainer:
             output_dir: Directory to save outputs
             save_best: Whether to save only the best model
             log_interval: How often to log batch results
+            monitor_gradients: Use callbacks for gradient flow inspection
         """
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -66,15 +70,31 @@ class ContrastiveTrainer:
             ],
         )
         self.logger = logging.getLogger(__name__)
-        
+
         # if load_path is provided, resume training
         if loading_checkpoint:
-            checkpoint_path = self.output_dir / "best_model.pth"  # Or the correct checkpoint file
+            checkpoint_path = (
+                self.output_dir / "best_model.pth"
+            )  # Or the correct checkpoint file
             if checkpoint_path.exists():
-                self.start_epoch, best_val_loss, best_val_acc = self.load_checkpoint(checkpoint_path)
-                self.logger.info(f"Resumed training from epoch {self.start_epoch}, best val loss: {best_val_loss}, best val acc: {best_val_acc}")
+                self.start_epoch, best_val_loss, best_val_acc = self.load_checkpoint(
+                    checkpoint_path
+                )
+                self.logger.info(
+                    f"Resumed training from epoch {self.start_epoch}, best val loss: {best_val_loss}, best val acc: {best_val_acc}"
+                )
             else:
-                self.logger.warning(f"No checkpoint found at {checkpoint_path}, starting training from scratch.")
+                self.logger.warning(
+                    f"No checkpoint found at {checkpoint_path}, starting training from scratch."
+                )
+
+        self.monitor_gradients = monitor_gradients
+        if self.monitor_gradients:
+            self.gradient_monitor = GradientMonitor(
+                model=model,
+                output_dir=f"{output_dir}/gradients",
+                log_interval=log_interval,
+            )
 
     def train(self):
         """Train the model."""
@@ -88,9 +108,9 @@ class ContrastiveTrainer:
 
         for epoch in range(self.num_epochs):
             # Update the sampler with current epoch
-            if hasattr(self.train_loader.sampler, 'set_epoch'):
+            if hasattr(self.train_loader.sampler, "set_epoch"):
                 self.train_loader.sampler.set_epoch(epoch)
-    
+
             # Training
             train_loss, train_acc = self._train_epoch(epoch)
             train_losses.append(train_loss)
@@ -100,6 +120,9 @@ class ContrastiveTrainer:
             val_loss, val_acc = self._validate_epoch(epoch)
             val_losses.append(val_loss)
             val_accuracies.append(val_acc)
+
+            if self.monitor_gradients:
+                self.gradient_monitor.after_epoch(epoch)
 
             # Update learning rate
             if self.scheduler is not None:
@@ -133,7 +156,7 @@ class ContrastiveTrainer:
         np.save(self.output_dir / "train_accuracies.npy", np.array(train_accuracies))
         np.save(self.output_dir / "val_accuracies.npy", np.array(val_accuracies))
 
-        # Save 
+        # Save
         # log best validation loss
         self.logger.info(
             f"Training completed. Best validation loss: {best_val_loss:.4f}"
@@ -170,6 +193,10 @@ class ContrastiveTrainer:
 
                 # Update statistics
                 epoch_loss += loss.item()
+
+                # Call gradient monitor after backward pass (if enabled)
+                if self.monitor_gradients:
+                    self.gradient_monitor.after_batch(epoch, batch_idx, outputs, loss)
 
                 # Collect predictions for evaluation
                 if "change_score" in outputs:
@@ -268,7 +295,7 @@ class ContrastiveTrainer:
 
     def load_checkpoint(self, checkpoint_path):
         """Load model checkpoint."""
-        
+
         # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
@@ -284,8 +311,11 @@ class ContrastiveTrainer:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
         # Returns epoch, val_loss, val_acc
-        return checkpoint.get("epoch", 0), checkpoint.get("val_loss", None), checkpoint.get("val_acc", None)
-
+        return (
+            checkpoint.get("epoch", 0),
+            checkpoint.get("val_loss", None),
+            checkpoint.get("val_acc", None),
+        )
 
     def _plot_training_curves(self, train_losses, val_losses, train_accs, val_accs):
         """Plot training curves."""
