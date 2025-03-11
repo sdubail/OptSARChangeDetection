@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim as optim
-from gradient_monitor import GradientMonitor
 from sklearn.metrics import balanced_accuracy_score
 from tqdm import tqdm
+
+from utils.gradient_monitor import GradientMonitor
 
 
 class ContrastiveTrainer:
