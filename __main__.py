@@ -160,6 +160,7 @@ def main(args):
         save_best=True,
         log_interval=args.log_interval,
         loading_checkpoint=config["training"]["loading_checkpoint"],
+        monitor_gradients=args.monitor_gradients,
     )
 
     # Train model
@@ -207,6 +208,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--subset_seed", type=int, default=42, help="Random seed for subset selection"
+    )
+    parser.add_argument(
+        "--monitor_gradients",
+        action="store_true",
+        help="Enable monitoring and visualization of gradients and activations",
     )
     args = parser.parse_args()
 
