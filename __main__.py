@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 # Import the preprocessed patch dataset
 from data.dataset_patches import PreprocessedPatchDataset
 from data.transforms import get_transform
-from losses.contrastive_loss import SupervisedContrastiveLoss
+from losses.contrastive_loss import InfoNCEContrastiveLoss, SupervisedContrastiveLoss
 from models.pseudo_siamese import (
     MultimodalDamageNet,  # Using your original model with minimal changes
 )
@@ -126,7 +126,11 @@ def main(args):
         print(f"{name}: requires_grad={param.requires_grad}")
 
     # Create simplified contrastive loss function
-    criterion = SupervisedContrastiveLoss(
+    # criterion = SupervisedContrastiveLoss(
+    #     temperature=config["training"].get("temperature", 0.07),
+    # )
+    # Create infoNCE contrastive loss function
+    criterion = InfoNCEContrastiveLoss(
         temperature=config["training"].get("temperature", 0.07),
     )
 
