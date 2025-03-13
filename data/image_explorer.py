@@ -2,6 +2,7 @@
 """
 Full image explorer for SAR-Optical change detection dataset.
 Allows browsing and analysis of full satellite images with zoom and pan capabilities.
+Added keyboard navigation: 'n' for next, 'w' to mark as 'w', 's' to mark as 's'.
 """
 
 import argparse
@@ -28,6 +29,8 @@ from tkinter import (
     X,
     Y,
     ttk,
+    simpledialog,
+    messagebox,
 )
 
 import numpy as np
@@ -165,7 +168,7 @@ class ImageCanvas(Canvas):
 
         # Zoom and pan state
         self.zoom_level = 1.0
-        self.min_zoom = 0.1
+        self.min_zoom = 0.05  # Allow more zoom out
         self.max_zoom = 10.0
         self.pan_x = 0
         self.pan_y = 0
@@ -176,6 +179,9 @@ class ImageCanvas(Canvas):
         # Image data
         self.numpy_image = None  # Original numpy image
         self.display_range = (0, 255)  # Range for display scaling
+        
+        # Bind to configure event to handle canvas resizing
+        self.bind("<Configure>", self.on_resize)
 
         # Setup interactions
         self.bind("<ButtonPress-1>", self.on_button_press)
@@ -184,6 +190,13 @@ class ImageCanvas(Canvas):
         self.bind("<MouseWheel>", self.on_mousewheel)  # Windows
         self.bind("<Button-4>", self.on_mousewheel)  # Linux scroll up
         self.bind("<Button-5>", self.on_mousewheel)  # Linux scroll down
+        
+    def on_resize(self, event):
+        """Handle canvas resize event."""
+        # Only refit if we already have an image
+        if self.image is not None:
+            # Wait a bit to ensure the resize is complete
+            self.after(100, self.fit_to_canvas)
 
     def set_image(self, np_image, title=None):
         """Set a new image to display."""
@@ -203,10 +216,8 @@ class ImageCanvas(Canvas):
         # Normalize the image to 0-255 range for display
         self.update_display()
 
-        # Reset zoom and pan
-        self.zoom_level = 1.0
-        self.pan_x = 0
-        self.pan_y = 0
+        # Calculate optimal zoom level to fit the image in the canvas
+        self.fit_to_canvas()
 
         # Add title if provided
         if title:
@@ -259,7 +270,11 @@ class ImageCanvas(Canvas):
             img_max = np.percentile(img, 98, axis=(0, 1))
 
         # Apply range
-        normalized = np.clip((img - img_min) / (img_max - img_min), 0, 1)
+        # Prevent division by zero
+        if np.all(img_min == img_max):
+            return np.zeros_like(img, dtype=np.uint8)
+            
+        normalized = np.clip((img - img_min) / (img_max - img_min + 1e-10), 0, 1)
 
         # Convert to 8-bit
         return (normalized * 255).astype(np.uint8)
@@ -291,6 +306,38 @@ class ImageCanvas(Canvas):
                 image=self.photo_image,
                 tags=("image"),
             )
+            
+    def fit_to_canvas(self):
+        """Adjust zoom level to fit the image in the canvas."""
+        if self.image is None:
+            return
+            
+        # Reset pan position
+        self.pan_x = 0
+        self.pan_y = 0
+        
+        # Get canvas dimensions
+        canvas_width = self.winfo_width()
+        canvas_height = self.winfo_height()
+        
+        # Ensure the canvas dimensions are valid
+        if canvas_width <= 1 or canvas_height <= 1:
+            # Canvas not yet properly sized, use default zoom
+            self.zoom_level = 1.0
+            return
+            
+        # Calculate zoom factors for width and height
+        width_zoom = (canvas_width - 20) / self.image.width  # Add some padding
+        height_zoom = (canvas_height - 20) / self.image.height  # Add some padding
+        
+        # Use the smaller zoom factor to ensure the entire image fits
+        self.zoom_level = min(width_zoom, height_zoom)
+        
+        # Ensure zoom level is within bounds
+        self.zoom_level = max(self.min_zoom, min(self.zoom_level, self.max_zoom))
+        
+        # Apply the zoom
+        self.zoom_image()
 
     def on_button_press(self, event):
         """Handle button press event."""
@@ -353,10 +400,11 @@ class ImageCanvas(Canvas):
 class FullImageExplorer:
     """Main application for exploring full SAR-Optical satellite images."""
 
-    def __init__(self, root, data_dir, split="train"):
+    def __init__(self, root, data_dir, split="train", output_file="image_labels.txt"):
         self.root = root
         self.data_dir = Path(data_dir)
         self.split = split
+        self.output_file = output_file
 
         # Set window title and size
         root.title(f"Full Satellite Image Explorer - {split}")
@@ -370,13 +418,22 @@ class FullImageExplorer:
 
         # Current image index
         self.current_index = 0
+        
+        # Status variable for keyboard actions
+        self.status_var = StringVar()
+        self.status_var.set("")
 
         # Create UI components
         self.create_widgets()
 
-        # Load first image
-        if self.image_ids:
-            self.load_current_image()
+    # Bind keyboard events
+        self.root.bind("<KeyPress-n>", self.on_key_next)
+        self.root.bind("<KeyPress-c>", self.on_key_c)
+        self.root.bind("<KeyPress-s>", self.on_key_s)
+        
+        # Initial image loading will be done via main() after the GUI is set up
+
+        # Will load the first or selected image after initialization
 
     def load_image_ids(self):
         """Load all available image IDs from the dataset."""
@@ -434,6 +491,12 @@ class FullImageExplorer:
             nav_frame, textvariable=self.index_var, bg="#333333", fg="white"
         )
         index_label.pack(side=LEFT, padx=20)
+
+        # Status display for keyboard actions
+        status_label = Label(
+            nav_frame, textvariable=self.status_var, bg="#333333", fg="#FFFF00"
+        )
+        status_label.pack(side=LEFT, padx=20)
 
         # Display controls
         display_frame = Frame(control_panel, bg="#333333")
@@ -574,10 +637,12 @@ class FullImageExplorer:
         )
         info_label.pack(fill=X, padx=10, pady=5)
 
-        # Navigation instruction
+                    # Navigation instruction
         instruction_text = (
             "Pan: Click and drag | Zoom: Mouse wheel | "
-            "Navigate: Previous/Next buttons or dropdown"
+            "Navigate: Previous/Next buttons or dropdown | "
+            "Keyboard: 'n' for next, 'c' to mark as 'c', 's' to mark as 's' | "
+            "Images auto-fit to canvas"
         )
         instruction_label = Label(
             info_frame, text=instruction_text, bg="#333333", fg="#AAAAAA", anchor="w"
@@ -612,6 +677,45 @@ class FullImageExplorer:
 
         self.index_var.set(f"Image {self.current_index + 1} of {len(self.image_ids)}")
 
+    def prompt_for_starting_image(self):
+        """Show a dialog to ask the user which image to start from."""
+        if not self.image_ids:
+            messagebox.showinfo("No Images", "No images found in the dataset.")
+            return
+            
+        # Ask for starting image index or image ID
+        prompt = "Enter the index (1-{}) or image ID to start from:".format(len(self.image_ids))
+        response = simpledialog.askstring("Starting Image", prompt)
+        
+        if response:
+            try:
+                # Try to interpret as index
+                index = int(response) - 1  # Convert to 0-based index
+                if 0 <= index < len(self.image_ids):
+                    self.current_index = index
+                    self.load_current_image()
+                else:
+                    # Out of range
+                    messagebox.showwarning("Invalid Index", f"Index must be between 1 and {len(self.image_ids)}")
+                    # Load first image as fallback
+                    self.current_index = 0
+                    self.load_current_image()
+            except ValueError:
+                # Try to interpret as image ID
+                if response in self.image_ids:
+                    self.current_index = self.image_ids.index(response)
+                    self.load_current_image()
+                else:
+                    # Not found
+                    messagebox.showwarning("Invalid Image ID", f"Image ID '{response}' not found")
+                    # Load first image as fallback
+                    self.current_index = 0
+                    self.load_current_image()
+        else:
+            # If canceled or empty, start with first image
+            self.current_index = 0
+            self.load_current_image()
+    
     def load_current_image(self):
         """Load the current image."""
         if not self.image_ids:
@@ -724,6 +828,64 @@ class FullImageExplorer:
         max_val = self.post_max_scale.get()
         self.post_canvas.update_display(min_val, max_val)
 
+    def on_key_next(self, event):
+        """Handle 'n' key press (next image)."""
+        self.status_var.set(f"Next image (#{self.current_index + 2})")
+        self.load_next_image()
+
+    def on_key_c(self, event):
+        """Handle 'c' key press."""
+        if not self.image_ids:
+            return
+
+        # Get current image ID
+        image_id = self.image_ids[self.current_index]
+        
+        # Write to file
+        self.write_to_file(image_id, "c")
+        
+        # Show status
+        self.status_var.set(f"Marked '{image_id}' (#{self.current_index + 1}) as 'c'")
+        
+        # Load next image
+        self.load_next_image()
+
+    def on_key_s(self, event):
+        """Handle 's' key press."""
+        if not self.image_ids:
+            return
+
+        # Get current image ID
+        image_id = self.image_ids[self.current_index]
+        
+        # Write to file
+        self.write_to_file(image_id, "s")
+        
+        # Show status
+        self.status_var.set(f"Marked '{image_id}' (#{self.current_index + 1}) as 's'")
+        
+        # Load next image
+        self.load_next_image()
+
+    def write_to_file(self, image_id, label):
+        """Write the image ID, index, and label to the output file."""
+        try:
+            # Create the directory if it doesn't exist
+            output_path = Path(self.output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Get the index (1-based for better readability)
+            image_index = self.current_index + 1
+            
+            # Write to file (append mode)
+            with open(output_path, "a") as f:
+                f.write(f"{image_id},{image_index},{label}\n")
+                
+            print(f"Added '{image_id},{image_index},{label}' to {self.output_file}")
+        except Exception as e:
+            print(f"Error writing to file: {e}")
+            self.status_var.set(f"Error: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -742,12 +904,55 @@ def main():
         choices=["train", "val"],
         help="Dataset split to use",
     )
+    parser.add_argument(
+        "--output_file",
+        type=str,
+        default="image_labels.txt",
+        help="Output file for image labels",
+    )
+    parser.add_argument(
+        "--start_index",
+        type=int,
+        default=None,
+        help="Starting image index (1-based)",
+    )
+    parser.add_argument(
+        "--start_id",
+        type=str,
+        default=None,
+        help="Starting image ID",
+    )
     args = parser.parse_args()
 
     # Create the Tkinter application
     root = Tk()
-    app = FullImageExplorer(root, args.data_dir, args.split)
-
+    app = FullImageExplorer(root, args.data_dir, args.split, args.output_file)
+    
+    # After the GUI is fully set up, process any starting parameters
+    def after_setup():
+        # Determine if we should use command line args or prompt
+        use_prompt = True
+        
+        # If a starting index or ID was specified via command line
+        if args.start_index is not None and args.start_index > 0:
+            index = args.start_index - 1  # Convert to 0-based
+            if 0 <= index < len(app.image_ids):
+                app.current_index = index
+                app.load_current_image()
+                use_prompt = False  # Skip the prompt
+        elif args.start_id is not None:
+            if args.start_id in app.image_ids:
+                app.current_index = app.image_ids.index(args.start_id)
+                app.load_current_image()
+                use_prompt = False  # Skip the prompt
+        
+        # Only show the prompt if no valid command-line args were provided
+        if use_prompt:
+            app.prompt_for_starting_image()
+        
+    # Schedule this to run after main window is up
+    root.after(100, after_setup)
+    
     # Start the main loop
     root.mainloop()
 
