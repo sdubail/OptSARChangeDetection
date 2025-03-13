@@ -61,96 +61,88 @@ class InfoNCEContrastiveLoss(nn.Module):
 
     def forward(self, optical_features, sar_features, is_positive):
         """
+        Forward pass for the contrastive loss calculation.
+
         Args:
             optical_features: Features from optical images (batch_size, feature_dim)
             sar_features: Features from SAR images (batch_size, feature_dim)
-            is_positive: Binary labels (0: negative pair with damage, 1: positive pair without damage)
+            is_positive: Binary labels (0: damaged pair = negative, 1: intact pair = positive)
+
+        Returns:
+            Scalar loss value (average contrastive loss across all valid comparisons)
         """
         batch_size = optical_features.shape[0]
 
-        # Normalize features to unit length
+        # Ensure is_positive is a float tensor for calculations
+        if not isinstance(is_positive, torch.Tensor):
+            is_positive = torch.tensor(is_positive, device=optical_features.device)
+        is_positive = is_positive.float().view(-1)
+
+        # Normalize features to unit vectors
         optical_features = F.normalize(optical_features, dim=1)
         sar_features = F.normalize(sar_features, dim=1)
 
-        # Compute full similarity matrix between all pairs in the batch
-        # Shape: (batch_size, batch_size)
+        # Compute similarity matrix between all pairs in the batch
         similarity_matrix = (
             torch.matmul(optical_features, sar_features.T) / self.temperature
         )
 
-        # Flatten the labels for easier indexing
-        labels = is_positive.flatten()
+        # Get diagonal similarities (corresponding pairs)
+        pair_similarities = similarity_matrix.diagonal()
 
-        # Create masks for the positive-negative contrasts:
-        # For each positive example i, identify all negative examples j for contrast
-        mask_pos_contrast = labels.unsqueeze(1) * (1 - labels).unsqueeze(
-            0
-        )  # (i,j)=1 if i is positive and j is negative
-
-        # For each negative example i, identify all positive examples j for contrast
-        mask_neg_contrast = (1 - labels).unsqueeze(1) * labels.unsqueeze(
-            0
-        )  # (i,j)=1 if i is negative and j is positive
-
-        # Initialize loss calculation
-        loss = torch.tensor(0.0, device=optical_features.device)
+        # Initialize loss with a tensor that supports gradient calculation
+        loss = torch.zeros(1, device=optical_features.device, requires_grad=True)
         n_comparisons = 0
 
-        # PART 1: For each positive example, contrast with all negative examples
-        if torch.sum(mask_pos_contrast) > 0:
-            # Get diagonal similarities (corresponding pairs)
-            pos_similarities = (
-                similarity_matrix.diagonal()
-            )  # similarities of pairs (i,i)
+        # Create masks for positive and negative examples
+        pos_mask = is_positive == 1
+        neg_mask = is_positive == 0
 
-            # Get exp(similarity) for positive examples
-            pos_exp = torch.exp(pos_similarities[labels == 1])
+        # PART 1: Process positive examples (intact buildings in both modalities)
+        n_positives = pos_mask.sum().item()
+        if n_positives > 0:
+            pos_similarities = pair_similarities[pos_mask]
 
-            # For each positive example, sum exp(similarity) with all negative examples
-            # Reshape to get a matrix where each row corresponds to a positive example
-            # and contains similarities with all negative examples
-            neg_exp_sum = torch.sum(
-                torch.exp(similarity_matrix[mask_pos_contrast.bool()]).reshape(
-                    torch.sum(labels).int(), -1
-                ),
-                dim=1,
-            )
+            # Create mask for positive-negative contrasts
+            # Each row i corresponds to a positive example, each column j to a negative example
+            mask_pos_contrast = pos_mask.unsqueeze(1) * neg_mask.unsqueeze(0)
 
-            # Calculate InfoNCE-style loss for positive examples
-            # This maximizes similarity for corresponding positive pairs
-            # while minimizing similarity with all negative examples
-            loss_pos = -torch.log(pos_exp / (pos_exp + neg_exp_sum + 1e-8))
-            loss += torch.sum(loss_pos)
-            n_comparisons += len(loss_pos)
+            # If we have both positive and negative examples for contrast
+            if mask_pos_contrast.sum() > 0:
+                pos_exp = torch.exp(pos_similarities)
 
-        # PART 2: For each negative example, contrast with all positive examples (optional)
-        if torch.sum(mask_neg_contrast) > 0 and self.use_hard_negatives:
-            # Get diagonal similarities (corresponding pairs)
-            neg_similarities = (
-                similarity_matrix.diagonal()
-            )  # similarities of pairs (i,i)
+                # Reshape to get similarities with negative examples for each positive example
+                neg_similarities = similarity_matrix[mask_pos_contrast.bool()].reshape(
+                    n_positives, -1
+                )
+                neg_exp_sum = torch.sum(torch.exp(neg_similarities), dim=1)
 
-            # For negative pairs, we want to MINIMIZE similarity, so negate the similarity
-            neg_exp = torch.exp(-neg_similarities[labels == 0])
+                # Calculate InfoNCE-style loss (bring positives closer, push negatives away)
+                pos_loss = -torch.log(pos_exp / (pos_exp + neg_exp_sum + 1e-8))
+                loss = loss + pos_loss.sum()
+                n_comparisons += n_positives
+            else:
+                # If no negative examples, simply maximize similarity for positive pairs
+                pos_loss = -pos_similarities
+                loss = loss + pos_loss.sum()
+                n_comparisons += n_positives
 
-            # For each negative example, sum exp(-similarity) with all positive examples
-            # The negation inverts the optimization goal
-            pos_exp_sum = torch.sum(
-                torch.exp(-similarity_matrix[mask_neg_contrast.bool()]).reshape(
-                    torch.sum(1 - labels).int(), -1
-                ),
-                dim=1,
-            )
+        # PART 2: Process negative examples (damaged buildings)
+        n_negatives = neg_mask.sum().item()
+        if n_negatives > 0:
+            neg_similarities = pair_similarities[neg_mask]
 
-            # Calculate InfoNCE-style loss for negative examples
-            # This minimizes similarity for corresponding negative pairs
-            # while maximizing similarity with other positive examples
-            loss_neg = -torch.log(neg_exp / (neg_exp + pos_exp_sum + 1e-8))
-            loss += torch.sum(loss_neg)
-            n_comparisons += len(loss_neg)
+            # Minimize similarity for negative pairs (push damaged pairs apart)
+            neg_loss = neg_similarities
+            loss = loss + neg_loss.sum()
+            n_comparisons += n_negatives
 
-        # Average the loss over all comparisons
-        return loss / max(n_comparisons, 1)
+        # Handle the case where no comparisons are made (empty batch or all one class)
+        if n_comparisons == 0:
+            return torch.zeros(1, requires_grad=True, device=optical_features.device)
+
+        # Return average loss
+        return loss / n_comparisons
 
 
 # class CombinedLoss(nn.Module):
