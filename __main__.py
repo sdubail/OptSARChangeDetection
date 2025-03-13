@@ -14,7 +14,7 @@ from losses.contrastive_loss import InfoNCEContrastiveLoss, SupervisedContrastiv
 from models.pseudo_siamese import (
     MultimodalDamageNet,  # Using your original model with minimal changes
 )
-from sampler.sampler import WarmupSampler
+from sampler.sampler import RatioSampler, WarmupSampler
 from trainer.trainer import ContrastiveTrainer
 
 
@@ -84,10 +84,16 @@ def main(args):
     #     shuffle=True
     # )
 
-    sampler = WarmupSampler(
+    # sampler = WarmupSampler(
+    #     train_dataset,
+    #     batch_size=config["training"]["batch_size"],
+    #     warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
+    # )
+
+    sampler = RatioSampler(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
+        neg_ratio=0.8,  # 80% negative, 20% positive
     )
 
     train_loader = DataLoader(
