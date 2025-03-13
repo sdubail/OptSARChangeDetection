@@ -1,18 +1,7 @@
-"""
-Pre-process satellite image dataset by extracting patches for contrastive learning.
-This script extracts patch pairs from the training dataset, classifies them as positive
-(no change) or negative (with change), and splits them into train and validation sets.
-
-Stored in two separate h5 files (train, val). Very temporary until we agree on a
-definitive data management solution.
-"""
-
 import argparse
 import json
 import logging
-import os
 import random
-import sys
 from pathlib import Path
 
 import h5py
@@ -20,7 +9,6 @@ import numpy as np
 import rasterio
 import torch
 import yaml
-from PIL import Image
 from tqdm import tqdm
 
 # Setup logging
@@ -109,290 +97,469 @@ class SimpleDatasetLoader:
         }
 
 
-class PatchExtractor:
-    """Extract positive and negative patch pairs from satellite images."""
-
-    def __init__(
-        self,
-        patch_size=64,
-        stride=32,
-        pos_threshold=0.05,
-        min_valid_pixels=0.8,
-        balance_ratio=0.5,
-        max_pairs_per_image=500,
-        random_seed=42,
-    ):
-        """
-        Args:
-            patch_size: Size of patches to extract (square)
-            stride: Stride for patch extraction
-            pos_threshold: Maximum damage ratio for positive pairs
-            min_valid_pixels: Minimum ratio of valid pixels needed
-            balance_ratio: Target ratio of positive samples
-            max_pairs_per_image: Maximum number of pairs to extract per image
-            random_seed: Random seed for reproducibility
-        """
-        self.patch_size = patch_size
-        self.stride = stride
-        self.pos_threshold = pos_threshold
-        self.min_valid_pixels = min_valid_pixels
-        self.balance_ratio = balance_ratio
-        self.max_pairs_per_image = max_pairs_per_image
-        self.random_seed = random_seed
-
-        random.seed(random_seed)
-        np.random.seed(random_seed)
-
-    def extract_patches(self, pre_img, post_img, label):
-        """Extract patches from image triplet."""
-        h, w = pre_img.shape[:2]
-
-        patches = []
-        for y in range(0, h - self.patch_size + 1, self.stride):
-            for x in range(0, w - self.patch_size + 1, self.stride):
-                # Extract patches
-                pre_patch = pre_img[
-                    y : y + self.patch_size, x : x + self.patch_size
-                ].copy()
-                post_patch = post_img[
-                    y : y + self.patch_size, x : x + self.patch_size
-                ].copy()
-                label_patch = label[
-                    y : y + self.patch_size, x : x + self.patch_size
-                ].copy()
-
-                # Check if patch is valid (contains enough valid pixels)
-                valid_mask = ~np.isnan(pre_patch).any(axis=2) & ~np.isnan(
-                    post_patch
-                ).any(axis=2)
-                valid_ratio = np.sum(valid_mask) / valid_mask.size
-
-                if valid_ratio < self.min_valid_pixels:
-                    continue
-
-                # Calculate damage ratio
-                if label_patch.ndim > 2:
-                    label_patch_flat = label_patch.squeeze()
-                else:
-                    label_patch_flat = label_patch
-
-                # Skip patches with only NaN or invalid values
-                if np.isnan(label_patch_flat).all() or (label_patch_flat == 0).all():
-                    continue
-
-                # Calculate damage ratio
-                damage_pixels = np.sum(label_patch_flat > 0)
-                total_valid_pixels = np.sum(~np.isnan(label_patch_flat))
-
-                if total_valid_pixels == 0:
-                    continue
-
-                damage_ratio = damage_pixels / total_valid_pixels
-
-                # Determine if positive or negative sample
-                is_positive = damage_ratio <= self.pos_threshold
-
-                patches.append(
-                    {
-                        "pre_patch": pre_patch,
-                        "post_patch": post_patch,
-                        "label": label_patch,
-                        "is_positive": is_positive,
-                        "position": (y, x),
-                        "damage_ratio": damage_ratio,
-                    }
-                )
-
-        return patches
-
-    def create_balanced_dataset(self, patches):
-        """Create a balanced dataset with desired ratio of positive samples."""
-        # Separate positive and negative samples
-        pos_patches = [p for p in patches if p["is_positive"]]
-        neg_patches = [p for p in patches if not p["is_positive"]]
-
-        logger.info(
-            f"  - Found {len(pos_patches)} positive and {len(neg_patches)} negative patches"
-        )
-
-        # Determine samples to keep for balance
-        total_samples = min(
-            len(pos_patches) + len(neg_patches), self.max_pairs_per_image
-        )
-
-        # Calculate target counts
-        target_pos = int(total_samples * self.balance_ratio)
-        target_neg = total_samples - target_pos
-
-        # Adjust if needed
-        if target_pos > len(pos_patches):
-            target_pos = len(pos_patches)
-            target_neg = min(total_samples - target_pos, len(neg_patches))
-
-        if target_neg > len(neg_patches):
-            target_neg = len(neg_patches)
-            target_pos = min(total_samples - target_neg, len(pos_patches))
-
-        # Randomly sample
-        random.shuffle(pos_patches)
-        random.shuffle(neg_patches)
-
-        selected_patches = pos_patches[:target_pos] + neg_patches[:target_neg]
-        random.shuffle(selected_patches)
-
-        return selected_patches
-
-
-def split_train_val(all_patches, train_ratio=0.8, balance_ratio=0.5, random_seed=42):
+def extract_and_save_patches(
+    config,
+    image_id,
+    pre_img,
+    post_img,
+    label,
+    train_h5,
+    val_h5,
+    train_meta,
+    val_meta,
+    train_ratio=0.8,
+):
     """
-    Split patches into training and validation sets while maintaining class balance.
+    Extract patches from an image and save them directly to HDF5 files.
 
     Args:
-        all_patches: List of all patch dictionaries
-        train_ratio: Ratio of training to total data
-        balance_ratio: Desired ratio of positive samples in each split
-        random_seed: Random seed for reproducibility
+        config: Configuration dictionary
+        image_id: ID of the current image
+        pre_img: Pre-event image
+        post_img: Post-event image
+        label: Label image
+        train_h5: HDF5 file handle for training data
+        val_h5: HDF5 file handle for validation data
+        train_meta: List to store training metadata
+        val_meta: List to store validation metadata
+        train_ratio: Ratio of patches to use for training
 
     Returns:
-        train_patches, val_patches: Split patch lists
+        tuple: (num_train_pos, num_train_neg, num_val_pos, num_val_neg)
     """
-    # Set random seed for reproducibility
-    random.seed(random_seed)
+    # Extract patch parameters from config
+    roi_patch_size = config.get("roi_patch_size", 64)
+    context_patch_size = config.get("context_patch_size", 256)
+    stride = config.get("patch_stride", 32)
+    pos_threshold = config.get("pos_threshold", 0.05)
+    min_valid_pixels = config.get("min_valid_pixels", 0.8)
+    balance_ratio = config.get("positive_ratio", 0.5)
+    max_pairs_per_image = config.get("max_pairs_per_image", 500)
 
-    # Separate positive and negative samples
-    pos_patches = [p for p in all_patches if p["is_positive"]]
-    neg_patches = [p for p in all_patches if not p["is_positive"]]
+    # Calculate padding size
+    pad_size = (context_patch_size - roi_patch_size) // 2
+    h, w = pre_img.shape[:2]
 
-    # Shuffle both lists
-    random.shuffle(pos_patches)
-    random.shuffle(neg_patches)
+    # Calculate valid extraction region
+    start_y = pad_size
+    start_x = pad_size
+    end_y = h - pad_size - roi_patch_size + 1
+    end_x = w - pad_size - roi_patch_size + 1
 
-    # Calculate split indices
-    pos_train_count = int(len(pos_patches) * train_ratio)
-    neg_train_count = int(len(neg_patches) * train_ratio)
+    # Check if we have valid region
+    if start_y >= end_y or start_x >= end_x:
+        logger.warning(f"Image {image_id} too small for extraction: {h}x{w}")
+        return 0, 0, 0, 0
 
-    # Split positive and negative patches
-    pos_train = pos_patches[:pos_train_count]
-    pos_val = pos_patches[pos_train_count:]
-    neg_train = neg_patches[:neg_train_count]
-    neg_val = neg_patches[neg_train_count:]
+    # Collect positive and negative patches separately
+    positive_patches = []
+    negative_patches = []
 
-    # Combine and shuffle
-    train_patches = pos_train + neg_train
-    val_patches = pos_val + neg_val
-    random.shuffle(train_patches)
-    random.shuffle(val_patches)
+    # Extract patches
+    for y in range(start_y, end_y, stride):
+        for x in range(start_x, end_x, stride):
+            # Extract context patches
+            ctx_y_start = y - pad_size
+            ctx_x_start = x - pad_size
+            ctx_y_end = y + roi_patch_size + pad_size
+            ctx_x_end = x + roi_patch_size + pad_size
 
-    # Log statistics
+            pre_context = pre_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
+            post_context = post_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
+
+            # Extract ROI for labeling
+            label_roi = label[y : y + roi_patch_size, x : x + roi_patch_size].copy()
+
+            # Verify dimensions
+            if (
+                pre_context.shape[0] != context_patch_size
+                or pre_context.shape[1] != context_patch_size
+            ):
+                continue
+
+            # Check for valid pixels
+            valid_mask = ~np.isnan(
+                pre_img[y : y + roi_patch_size, x : x + roi_patch_size]
+            ).any(axis=2) & ~np.isnan(
+                post_img[y : y + roi_patch_size, x : x + roi_patch_size]
+            ).any(axis=2)
+            valid_ratio = np.sum(valid_mask) / valid_mask.size
+
+            if valid_ratio < min_valid_pixels:
+                continue
+
+            # Process the label ROI
+            if label_roi.ndim > 2:
+                label_roi_flat = label_roi.squeeze()
+            else:
+                label_roi_flat = label_roi
+
+            # Skip invalid labels
+            if np.isnan(label_roi_flat).all() or (label_roi_flat == 0).all():
+                continue
+
+            # Calculate damage ratio
+            label_patch_flat_binary = np.where(label_roi_flat > 1, 1, 0)
+            damage_pixels = np.sum(label_patch_flat_binary > 0)
+            total_valid_pixels = np.sum(~np.isnan(label_roi_flat))
+
+            if total_valid_pixels == 0:
+                continue
+
+            damage_ratio = damage_pixels / total_valid_pixels
+            is_positive = damage_ratio <= pos_threshold
+
+            # Create patch dict
+            patch = {
+                "pre_patch": pre_context,
+                "post_patch": post_context,
+                "label": label_roi,
+                "is_positive": is_positive,
+                "position": (y, x),
+                "damage_ratio": damage_ratio,
+            }
+
+            # Add to appropriate list
+            if is_positive:
+                positive_patches.append(patch)
+            else:
+                negative_patches.append(patch)
+
+    # Apply balancing if requested
+    num_pos = len(positive_patches)
+    num_neg = len(negative_patches)
+
     logger.info(
-        f"Split dataset into {len(train_patches)} training and {len(val_patches)} validation patches"
+        f"  Image {image_id}: Found {num_pos} positive and {num_neg} negative patches"
     )
-    logger.info(f"  - Training: {len(pos_train)} positive, {len(neg_train)} negative")
-    logger.info(f"  - Validation: {len(pos_val)} positive, {len(neg_val)} negative")
 
-    return train_patches, val_patches
+    # Balance dataset within each image if needed
+    total_samples = min(num_pos + num_neg, max_pairs_per_image)
+    target_pos = int(total_samples * balance_ratio)
+    target_neg = total_samples - target_pos
 
+    # Adjust targets if there are not enough samples
+    if target_pos > num_pos:
+        target_pos = num_pos
+        target_neg = min(total_samples - target_pos, num_neg)
 
-def save_patches_hdf5(output_dir, split, patches, config):
-    """Save patches to HDF5 files with metadata."""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if target_neg > num_neg:
+        target_neg = num_neg
+        target_pos = min(total_samples - target_neg, num_pos)
 
-    # Create HDF5 file for this split
-    h5_path = output_dir / f"{split}_patches.h5"
+    # Randomly shuffle and select the target number of patches
+    random.shuffle(positive_patches)
+    random.shuffle(negative_patches)
 
-    patch_size = config.get("patch_size", 64)
-    total_patches = len(patches)
+    pos_selected = positive_patches[:target_pos]
+    neg_selected = negative_patches[:target_neg]
 
-    logger.info(f"Saving {total_patches} patches to {h5_path}")
+    # Split into train and validation sets
+    pos_train_count = int(len(pos_selected) * train_ratio)
+    neg_train_count = int(len(neg_selected) * train_ratio)
 
-    # Create a list to store metadata
-    metadata = []
+    pos_train = pos_selected[:pos_train_count]
+    pos_val = pos_selected[pos_train_count:]
+    neg_train = neg_selected[:neg_train_count]
+    neg_val = neg_selected[neg_train_count:]
 
-    with h5py.File(h5_path, "w") as hf:
-        # Pre-create datasets
-        hf.create_dataset(
-            "pre_patches",
-            shape=(total_patches, patch_size, patch_size, 3),
-            dtype="float32",
-            chunks=(1, patch_size, patch_size, 3),
-            compression="gzip",
-        )
+    # Get current dataset sizes
+    train_size = train_h5["pre_patches"].shape[0]
+    val_size = val_h5["pre_patches"].shape[0]
 
-        hf.create_dataset(
-            "post_patches",
-            shape=(total_patches, patch_size, patch_size, 3),
-            dtype="float32",
-            chunks=(1, patch_size, patch_size, 3),
-            compression="gzip",
-        )
+    # Add to training set
+    num_train_pos = len(pos_train)
+    num_train_neg = len(neg_train)
+    train_patches = pos_train + neg_train
 
-        hf.create_dataset(
-            "labels",
-            shape=(total_patches, patch_size, patch_size, 1),
-            dtype="int8",
-            chunks=(1, patch_size, patch_size, 1),
-            compression="gzip",
-        )
+    if train_patches:
+        # Resize datasets to accommodate new patches
+        new_train_size = train_size + len(train_patches)
+        resize_h5_datasets(train_h5, new_train_size)
 
-        # Create datasets for metadata
-        hf.create_dataset("is_positive", shape=(total_patches,), dtype="bool")
-
-        # Fill datasets
-        for idx, patch in enumerate(tqdm(patches, desc=f"Saving {split} patches")):
-            # Store main data
-            hf["pre_patches"][idx] = patch["pre_patch"]
-            hf["post_patches"][idx] = patch["post_patch"]
+        # Add patches to HDF5
+        for i, patch in enumerate(train_patches):
+            idx = train_size + i
+            train_h5["pre_patches"][idx] = patch["pre_patch"]
+            train_h5["post_patches"][idx] = patch["post_patch"]
 
             # Ensure label has right shape
             label = patch["label"]
             if label.ndim == 2:
                 label = label[..., np.newaxis]
-            hf["labels"][idx] = label
+            train_h5["labels"][idx] = label
 
-            # Store metadata
-            hf["is_positive"][idx] = patch["is_positive"]
+            train_h5["is_positive"][idx] = patch["is_positive"]
 
-            # Add to metadata list
-            metadata.append(
+            # Add to metadata
+            train_meta.append(
                 {
                     "index": idx,
-                    "image_id": patch.get("image_id", "unknown"),
+                    "image_id": image_id,
                     "position": patch["position"],
                     "is_positive": bool(patch["is_positive"]),
                     "damage_ratio": float(patch["damage_ratio"]),
                 }
             )
 
-    # Save metadata JSON
-    with open(output_dir / f"{split}_metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2)
+    # Add to validation set
+    num_val_pos = len(pos_val)
+    num_val_neg = len(neg_val)
+    val_patches = pos_val + neg_val
 
-    # Save summary statistics
-    pos_count = sum(1 for p in metadata if p["is_positive"])
-    neg_count = sum(1 for p in metadata if not p["is_positive"])
+    if val_patches:
+        # Resize datasets to accommodate new patches
+        new_val_size = val_size + len(val_patches)
+        resize_h5_datasets(val_h5, new_val_size)
 
-    summary = {
-        "total_patches": total_patches,
-        "positive_patches": pos_count,
-        "negative_patches": neg_count,
-        "positive_ratio": pos_count / total_patches if total_patches > 0 else 0,
-        "patch_size": patch_size,
-        "config": config,
-    }
+        # Add patches to HDF5
+        for i, patch in enumerate(val_patches):
+            idx = val_size + i
+            val_h5["pre_patches"][idx] = patch["pre_patch"]
+            val_h5["post_patches"][idx] = patch["post_patch"]
 
-    with open(output_dir / f"{split}_summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+            # Ensure label has right shape
+            label = patch["label"]
+            if label.ndim == 2:
+                label = label[..., np.newaxis]
+            val_h5["labels"][idx] = label
 
-    logger.info(
-        f"Saved {total_patches} patches ({pos_count} positive, {neg_count} negative)"
+            val_h5["is_positive"][idx] = patch["is_positive"]
+
+            # Add to metadata
+            val_meta.append(
+                {
+                    "index": idx,
+                    "image_id": image_id,
+                    "position": patch["position"],
+                    "is_positive": bool(patch["is_positive"]),
+                    "damage_ratio": float(patch["damage_ratio"]),
+                }
+            )
+
+    # Flush to disk to save memory
+    train_h5.flush()
+    val_h5.flush()
+
+    return num_train_pos, num_train_neg, num_val_pos, num_val_neg
+
+
+def resize_h5_datasets(h5_file, new_size):
+    """Resize HDF5 datasets to accommodate more data."""
+    for key in h5_file.keys():
+        if isinstance(h5_file[key], h5py.Dataset):
+            current_shape = h5_file[key].shape
+            new_shape = list(current_shape)
+            new_shape[0] = new_size
+            h5_file[key].resize(new_shape)
+
+
+def preprocess_patches(config, output_dir, train_ratio=0.8, limit=None, seed=42):
+    """
+    Extract and save patches for contrastive learning with memory efficiency.
+
+    Args:
+        config: Configuration dictionary
+        output_dir: Directory to save processed patches
+        train_ratio: Ratio of patches for training vs validation
+        limit: Maximum number of images to process (None for all)
+        seed: Random seed
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Set random seed
+    random.seed(seed)
+    np.random.seed(seed)
+
+    # Get parameters from config
+    roi_patch_size = config.get("roi_patch_size", 64)
+    context_patch_size = config.get("context_patch_size", 256)
+
+    # Create simple dataset loader
+    dataset = SimpleDatasetLoader(
+        root_dir=config["data"]["root_dir"], split="train", limit=limit
     )
-    return h5_path
+
+    # Initialize HDF5 files with extendable datasets
+    train_h5_path = output_dir / "train_patches.h5"
+    val_h5_path = output_dir / "val_patches.h5"
+
+    # Create HDF5 files with resizable datasets
+    with h5py.File(train_h5_path, "w") as train_h5, h5py.File(
+        val_h5_path, "w"
+    ) as val_h5:
+        # Create extendable datasets for training
+        train_h5.create_dataset(
+            "pre_patches",
+            shape=(0, context_patch_size, context_patch_size, 3),
+            maxshape=(None, context_patch_size, context_patch_size, 3),
+            dtype="float32",
+            chunks=(1, context_patch_size, context_patch_size, 3),
+            compression="gzip",
+        )
+
+        train_h5.create_dataset(
+            "post_patches",
+            shape=(0, context_patch_size, context_patch_size, 3),
+            maxshape=(None, context_patch_size, context_patch_size, 3),
+            dtype="float32",
+            chunks=(1, context_patch_size, context_patch_size, 3),
+            compression="gzip",
+        )
+
+        train_h5.create_dataset(
+            "labels",
+            shape=(0, roi_patch_size, roi_patch_size, 1),
+            maxshape=(None, roi_patch_size, roi_patch_size, 1),
+            dtype="int8",
+            chunks=(1, roi_patch_size, roi_patch_size, 1),
+            compression="gzip",
+        )
+
+        train_h5.create_dataset(
+            "is_positive",
+            shape=(0,),
+            maxshape=(None,),
+            dtype="bool",
+        )
+
+        # Create extendable datasets for validation (same structure)
+        val_h5.create_dataset(
+            "pre_patches",
+            shape=(0, context_patch_size, context_patch_size, 3),
+            maxshape=(None, context_patch_size, context_patch_size, 3),
+            dtype="float32",
+            chunks=(1, context_patch_size, context_patch_size, 3),
+            compression="gzip",
+        )
+
+        val_h5.create_dataset(
+            "post_patches",
+            shape=(0, context_patch_size, context_patch_size, 3),
+            maxshape=(None, context_patch_size, context_patch_size, 3),
+            dtype="float32",
+            chunks=(1, context_patch_size, context_patch_size, 3),
+            compression="gzip",
+        )
+
+        val_h5.create_dataset(
+            "labels",
+            shape=(0, roi_patch_size, roi_patch_size, 1),
+            maxshape=(None, roi_patch_size, roi_patch_size, 1),
+            dtype="int8",
+            chunks=(1, roi_patch_size, roi_patch_size, 1),
+            compression="gzip",
+        )
+
+        val_h5.create_dataset(
+            "is_positive",
+            shape=(0,),
+            maxshape=(None,),
+            dtype="bool",
+        )
+
+        # Prepare metadata lists
+        train_metadata = []
+        val_metadata = []
+
+        # Track statistics
+        total_train_pos = 0
+        total_train_neg = 0
+        total_val_pos = 0
+        total_val_neg = 0
+
+        # Process each image
+        for i in tqdm(range(len(dataset)), desc="Processing images"):
+            sample = dataset[i]
+            image_id = sample["image_id"]
+
+            # Convert tensors to numpy if needed
+            pre_img = sample["pre_image"]
+            post_img = sample["post_image"]
+            label = sample["label"]
+
+            if isinstance(pre_img, torch.Tensor):
+                pre_img = pre_img.numpy().transpose(1, 2, 0)
+                post_img = post_img.numpy().transpose(1, 2, 0)
+                label = label.numpy()
+
+            # Extract patches and save directly to HDF5
+            train_pos, train_neg, val_pos, val_neg = extract_and_save_patches(
+                config,
+                image_id,
+                pre_img,
+                post_img,
+                label,
+                train_h5,
+                val_h5,
+                train_metadata,  # is modified in place by the function
+                val_metadata,  # is modified in place by the function
+                train_ratio,
+            )
+
+            # Update statistics
+            total_train_pos += train_pos
+            total_train_neg += train_neg
+            total_val_pos += val_pos
+            total_val_neg += val_neg
+
+            # Log progress
+            if (i + 1) % 10 == 0:
+                logger.info(f"Processed {i+1}/{len(dataset)} images")
+                logger.info(
+                    f"  Training: {total_train_pos} positive, {total_train_neg} negative"
+                )
+                logger.info(
+                    f"  Validation: {total_val_pos} positive, {total_val_neg} negative"
+                )
+
+        # Save metadata to files
+        with open(output_dir / "train_metadata.json", "w") as f:
+            json.dump(train_metadata, f)
+
+        with open(output_dir / "val_metadata.json", "w") as f:
+            json.dump(val_metadata, f)
+
+        # Save summary statistics
+        train_summary = {
+            "total_patches": total_train_pos + total_train_neg,
+            "positive_patches": total_train_pos,
+            "negative_patches": total_train_neg,
+            "positive_ratio": total_train_pos / (total_train_pos + total_train_neg)
+            if (total_train_pos + total_train_neg) > 0
+            else 0,
+            "roi_patch_size": roi_patch_size,
+            "context_patch_size": context_patch_size,
+            "config": config,
+        }
+
+        val_summary = {
+            "total_patches": total_val_pos + total_val_neg,
+            "positive_patches": total_val_pos,
+            "negative_patches": total_val_neg,
+            "positive_ratio": total_val_pos / (total_val_pos + total_val_neg)
+            if (total_val_pos + total_val_neg) > 0
+            else 0,
+            "roi_patch_size": roi_patch_size,
+            "context_patch_size": context_patch_size,
+            "config": config,
+        }
+
+        with open(output_dir / "train_summary.json", "w") as f:
+            json.dump(train_summary, f)
+
+        with open(output_dir / "val_summary.json", "w") as f:
+            json.dump(val_summary, f)
+
+    logger.info("Patch extraction complete!")
+    logger.info(f"Training: {total_train_pos} positive, {total_train_neg} negative")
+    logger.info(f"Validation: {total_val_pos} positive, {total_val_neg} negative")
 
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Extract and save patches for contrastive learning"
+        description="Extract and save patches for contrastive learning with context"
     )
     parser.add_argument(
         "--config",
@@ -427,81 +594,11 @@ def main():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
-    # Extract patch config parameters
-    patch_config = {
-        "patch_size": config.get("patch_size", 64),
-        "stride": config.get("patch_stride", 32),
-        "pos_threshold": config.get("pos_threshold", 0.05),
-        "min_valid_pixels": config.get("min_valid_pixels", 0.8),
-        "balance_ratio": config.get("positive_ratio", 0.5),
-        "max_pairs_per_image": config.get("max_pairs_per_image", 500),
-    }
-
-    # Create patch extractor
-    extractor = PatchExtractor(**patch_config, random_seed=args.seed)
-
-    # Create output directory
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save config
-    with open(output_dir / "extraction_config.yaml", "w") as f:
-        yaml.dump(patch_config, f)
-
-    # Load training data only
-    split = "train"  # We always use the training data and split it ourselves
-    logger.info(f"Processing {split} split...")
-
-    dataset = SimpleDatasetLoader(
-        root_dir=config["data"]["root_dir"], split=split, limit=args.limit
-    )
-
-    # Extract patches from each image
-    all_patches = []
-
-    for i in tqdm(range(len(dataset)), desc=f"Extracting patches from {split}"):
-        sample = dataset[i]
-        image_id = sample["image_id"]
-
-        # Convert tensors to numpy if needed
-        pre_img = sample["pre_image"]
-        post_img = sample["post_image"]
-        label = sample["label"]
-
-        if isinstance(pre_img, torch.Tensor):
-            pre_img = pre_img.numpy().transpose(1, 2, 0)
-            post_img = post_img.numpy().transpose(1, 2, 0)
-            label = label.numpy()
-
-        # Extract patches
-        image_patches = extractor.extract_patches(pre_img, post_img, label)
-
-        # Balance dataset within each image
-        balanced_patches = extractor.create_balanced_dataset(image_patches)
-
-        # Add image ID to each patch
-        for patch in balanced_patches:
-            patch["image_id"] = image_id
-
-        # Collect all patches
-        all_patches.extend(balanced_patches)
-
-    # Split patches into train and validation sets
-    train_patches, val_patches = split_train_val(
-        all_patches,
+    # Process patches
+    preprocess_patches(
+        config=config,
+        output_dir=args.output_dir,
         train_ratio=args.train_ratio,
-        balance_ratio=patch_config["balance_ratio"],
-        random_seed=args.seed,
+        limit=args.limit,
+        seed=args.seed,
     )
-
-    # Save train patches to disk
-    save_patches_hdf5(output_dir, "train", train_patches, patch_config)
-
-    # Save validation patches to disk
-    save_patches_hdf5(output_dir, "val", val_patches, patch_config)
-
-    logger.info(f"Processing complete. Patches saved to {output_dir}")
-
-
-if __name__ == "__main__":
-    main()

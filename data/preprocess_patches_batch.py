@@ -111,25 +111,17 @@ class PatchExtractor:
 
     def __init__(
         self,
-        patch_size=64,
-        stride=32,
-        pos_threshold=0.05,
-        min_valid_pixels=0.8,
-        balance_ratio=0.5,
-        max_pairs_per_image=500,
-        random_seed=42,
+        roi_patch_size=64,  # Size of the actual region of interest
+        context_patch_size=256,  # Size of the context window
+        stride=32,  # Stride for extraction
+        pos_threshold=0.05,  # Maximum damage ratio for positive pairs
+        min_valid_pixels=0.8,  # Minimum ratio of valid pixels needed
+        balance_ratio=0.5,  # Target ratio of positive samples
+        max_pairs_per_image=500,  # Maximum number of pairs to extract per image
+        random_seed=42,  # Random seed for reproducibility
     ):
-        """
-        Args:
-            patch_size: Size of patches to extract (square)
-            stride: Stride for patch extraction
-            pos_threshold: Maximum damage ratio for positive pairs
-            min_valid_pixels: Minimum ratio of valid pixels needed
-            balance_ratio: Target ratio of positive samples
-            max_pairs_per_image: Maximum number of pairs to extract per image
-            random_seed: Random seed for reproducibility
-        """
-        self.patch_size = patch_size
+        self.roi_patch_size = roi_patch_size
+        self.context_patch_size = context_patch_size
         self.stride = stride
         self.pos_threshold = pos_threshold
         self.min_valid_pixels = min_valid_pixels
@@ -137,50 +129,96 @@ class PatchExtractor:
         self.max_pairs_per_image = max_pairs_per_image
         self.random_seed = random_seed
 
+        # Calculate the padding needed to center the ROI in the context window
+        self.pad_size = (context_patch_size - roi_patch_size) // 2
+
         random.seed(random_seed)
         np.random.seed(random_seed)
 
     def extract_patches(self, pre_img, post_img, label):
-        """Extract patches from image triplet."""
+        """Extract patches from image triplet with context, skipping boundaries."""
         h, w = pre_img.shape[:2]
 
+        # Calculate valid extraction region considering context padding
+        start_y = self.pad_size
+        start_x = self.pad_size
+        end_y = h - self.pad_size - self.roi_patch_size + 1
+        end_x = w - self.pad_size - self.roi_patch_size + 1
+
+        # Check if we have valid region to extract from
+        if start_y >= end_y or start_x >= end_x:
+            logger.warning(
+                f"Image too small for extraction with current parameters: {h}x{w}"
+            )
+            return []
+
         patches = []
-        for y in range(0, h - self.patch_size + 1, self.stride):
-            for x in range(0, w - self.patch_size + 1, self.stride):
+        for y in range(start_y, end_y, self.stride):
+            for x in range(start_x, end_x, self.stride):
+                # Extract full-sized context patch
+                ctx_y_start = y - self.pad_size
+                ctx_x_start = x - self.pad_size
+                ctx_y_end = y + self.roi_patch_size + self.pad_size
+                ctx_x_end = x + self.roi_patch_size + self.pad_size
+
                 # Extract patches
-                pre_patch = pre_img[
-                    y : y + self.patch_size, x : x + self.patch_size
+                pre_context = pre_img[
+                    ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end
                 ].copy()
-                post_patch = post_img[
-                    y : y + self.patch_size, x : x + self.patch_size
-                ].copy()
-                label_patch = label[
-                    y : y + self.patch_size, x : x + self.patch_size
+                post_context = post_img[
+                    ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end
                 ].copy()
 
-                # Check if patch is valid (contains enough valid pixels)
-                valid_mask = ~np.isnan(pre_patch).any(axis=2) & ~np.isnan(
-                    post_patch
+                # Extract ROI for labeling
+                label_roi = np.zeros(
+                    (self.context_patch_size, self.context_patch_size, 1),
+                    dtype=label.dtype,
+                )
+                roi_label_data = label[
+                    y : y + self.roi_patch_size, x : x + self.roi_patch_size
+                ].copy()
+
+                # Place the ROI label in the center of the zero-padded context-sized label
+                label_roi[
+                    self.pad_size : self.pad_size + self.roi_patch_size,
+                    self.pad_size : self.pad_size + self.roi_patch_size,
+                ] = roi_label_data
+
+                # Verify the dimensions are as expected
+                assert (
+                    pre_context.shape[0] == self.context_patch_size
+                ), f"Context height mismatch: {pre_context.shape[0]} != {self.context_patch_size}"
+                assert (
+                    pre_context.shape[1] == self.context_patch_size
+                ), f"Context width mismatch: {pre_context.shape[1]} != {self.context_patch_size}"
+
+                # Check if patch is valid (contains enough valid pixels in ROI)
+                valid_mask = ~np.isnan(
+                    pre_img[y : y + self.roi_patch_size, x : x + self.roi_patch_size]
+                ).any(axis=2) & ~np.isnan(
+                    post_img[y : y + self.roi_patch_size, x : x + self.roi_patch_size]
                 ).any(axis=2)
                 valid_ratio = np.sum(valid_mask) / valid_mask.size
 
                 if valid_ratio < self.min_valid_pixels:
                     continue
 
-                # Calculate damage ratio
-                if label_patch.ndim > 2:
-                    label_patch_flat = label_patch.squeeze()
+                # Calculate damage ratio based only on the ROI
+                if label_roi.ndim > 2:
+                    label_roi_flat = label_roi.squeeze()
                 else:
-                    label_patch_flat = label_patch
+                    label_roi_flat = label_roi
 
                 # Skip patches with only NaN or invalid values
-                if np.isnan(label_patch_flat).all() or (label_patch_flat == 0).all():
+                if np.isnan(label_roi_flat).all() or (label_roi_flat == 0).all():
                     continue
 
                 # Calculate damage ratio
-                label_patch_flat_binary = np.where(label_patch_flat <= 1, 0, 1)
+                label_patch_flat_binary = np.where(
+                    label_roi_flat > 1, 1, 0
+                )  # Binary damage: >1 is damaged
                 damage_pixels = np.sum(label_patch_flat_binary > 0)
-                total_valid_pixels = np.sum(~np.isnan(label_patch_flat))
+                total_valid_pixels = np.sum(~np.isnan(label_roi_flat))
 
                 if total_valid_pixels == 0:
                     continue
@@ -192,11 +230,11 @@ class PatchExtractor:
 
                 patches.append(
                     {
-                        "pre_patch": pre_patch,
-                        "post_patch": post_patch,
-                        "label": label_patch,
+                        "pre_patch": pre_context,
+                        "post_patch": post_context,
+                        "label": label_roi,
                         "is_positive": is_positive,
-                        "position": (y, x),
+                        "position": (y, x),  # Original position in the full image
                         "damage_ratio": damage_ratio,
                     }
                 )
@@ -629,7 +667,8 @@ def main():
 
     # Extract patch config parameters
     patch_config = {
-        "patch_size": config.get("patch_size", 64),
+        "roi_patch_size": config.get("patch_size", 64),
+        "context_patch_size": config.get("context_patch_size", 256),
         "stride": config.get("patch_stride", 32),
         "pos_threshold": config.get("pos_threshold", 0.05),
         "min_valid_pixels": config.get("min_valid_pixels", 0.8),

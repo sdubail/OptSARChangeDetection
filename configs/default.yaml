@@ -6,7 +6,8 @@ data:
   num_workers: 4
 
 # Patch extraction parameters
-patch_size: 64                # Size of extracted patches
+roi_patch_size: 16              # Size of the actual region of interest
+context_patch_size: 256        # Size of the context window
 patch_stride: 32              # Stride for patch extraction
 pos_threshold: 0.05           # Maximum damage ratio for positive pairs
 min_valid_pixels: 0.8         # Minimum ratio of valid pixels needed
