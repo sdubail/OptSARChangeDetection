@@ -2,5 +2,6 @@
 **/__pycache__/
 .DS_Store
 **/processed_patches**
+**/metadata**
 **/output
 .vscode

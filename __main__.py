@@ -7,14 +7,14 @@ import torch.optim as optim
 import yaml
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-# Import the preprocessed patch dataset
 from data.dataset_patches import PreprocessedPatchDataset
+from data.dataset_patchonthefly import OnTheFlyPatchDataset
 from data.transforms import get_transform
 from losses.contrastive_loss import InfoNCEContrastiveLoss, SupervisedContrastiveLoss
 from models.pseudo_siamese import (
     MultimodalDamageNet,  # Using your original model with minimal changes
 )
-from sampler.sampler import RatioSampler, WarmupSampler
+from sampler.sampler import RatioSampler  # , WarmupSampler
 from trainer.trainer import ContrastiveTrainer
 
 
@@ -33,21 +33,41 @@ def main(args):
     train_transform = get_transform("train") if args.use_transforms else None
     val_transform = get_transform("val") if args.use_transforms else None
 
-    print("Loading preprocessed patch datasets...")
-    train_dataset = PreprocessedPatchDataset(
-        patch_dir=args.patch_dir,
+    # print("Loading preprocessed patch datasets...")
+    # train_dataset = PreprocessedPatchDataset(
+    #     patch_dir=args.patch_dir,
+    #     split="train",
+    #     transform=train_transform,
+    #     cache_size=args.cache_size,
+    #     subset_fraction=args.subset_fraction,
+    #     seed=args.subset_seed,
+    # )
+
+    # val_dataset = PreprocessedPatchDataset(
+    #     patch_dir=args.patch_dir,
+    #     split="val",
+    #     transform=val_transform,
+    #     cache_size=args.cache_size,
+    #     subset_fraction=args.subset_fraction,
+    #     seed=args.subset_seed,
+    # )
+
+    train_dataset = OnTheFlyPatchDataset(
+        root_dir=config["data"]["root_dir"],
+        metadata_dir=args.metadata_dir,
         split="train",
         transform=train_transform,
-        cache_size=args.cache_size,
+        cache_size=args.image_cache_size,
         subset_fraction=args.subset_fraction,
         seed=args.subset_seed,
     )
 
-    val_dataset = PreprocessedPatchDataset(
-        patch_dir=args.patch_dir,
+    val_dataset = OnTheFlyPatchDataset(
+        root_dir=config["data"]["root_dir"],
+        metadata_dir=args.metadata_dir,
         split="val",
         transform=val_transform,
-        cache_size=args.cache_size,
+        cache_size=args.image_cache_size,
         subset_fraction=args.subset_fraction,
         seed=args.subset_seed,
     )
@@ -182,6 +202,18 @@ if __name__ == "__main__":
         type=str,
         default="configs/default.yaml",
         help="Path to configuration file",
+    )
+    parser.add_argument(
+        "--metadata_dir",
+        type=str,
+        default="data/metadata_blacklist",
+        help="Directory containing patch metadata",
+    )
+    parser.add_argument(
+        "--image_cache_size",
+        type=int,
+        default=50,
+        help="Number of full images to cache in memory",
     )
     parser.add_argument(
         "--patch_dir",
