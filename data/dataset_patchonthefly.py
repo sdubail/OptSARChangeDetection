@@ -24,7 +24,7 @@ class OnTheFlyPatchDataset(Dataset):
         transform=None,
         cache_size=10,
         subset_fraction=1.0,
-        target_neg_ratio=0.5,
+        target_neg_ratio=None,
         seed=42,
     ):
         """
@@ -69,18 +69,22 @@ class OnTheFlyPatchDataset(Dataset):
         # Compute the actual dataset size based on subset_fraction
         total_size = int(len(self.image_ids) * subset_fraction)
 
-        # Compute target negative and positive counts
-        target_neg_count = int(total_size * target_neg_ratio)
-        target_pos_count = total_size - target_neg_count
-
-        # Adjust counts if we don't have enough samples
-        if target_neg_count > len(negative_indices):
-            target_neg_count = len(negative_indices)
+        if target_neg_ratio is not None:
+            # Compute target negative and positive counts
+            target_neg_count = int(total_size * target_neg_ratio)
             target_pos_count = total_size - target_neg_count
 
-        if target_pos_count > len(positive_indices):
-            target_pos_count = len(positive_indices)
-            target_neg_count = total_size - target_pos_count
+            # Adjust counts if we don't have enough samples
+            if target_neg_count > len(negative_indices):
+                target_neg_count = len(negative_indices)
+                target_pos_count = total_size - target_neg_count
+
+            if target_pos_count > len(positive_indices):
+                target_pos_count = len(positive_indices)
+                target_neg_count = total_size - target_pos_count
+        else:
+            target_neg_count = int(total_size * (1 - self.summary["positive_ratio"]))
+            target_pos_count = total_size - target_neg_count
 
         # Select samples
         self.selected_pos_indices = np.random.choice(

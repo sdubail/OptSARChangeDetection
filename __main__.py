@@ -59,6 +59,7 @@ def main(args):
         transform=train_transform,
         cache_size=args.image_cache_size,
         subset_fraction=args.subset_fraction,
+        target_neg_ratio=args.target_neg_ratio,
         seed=args.subset_seed,
     )
 
@@ -69,6 +70,7 @@ def main(args):
         transform=val_transform,
         cache_size=args.image_cache_size,
         subset_fraction=args.subset_fraction,
+        target_neg_ratio=None,
         seed=args.subset_seed,
     )
 
@@ -206,7 +208,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--metadata_dir",
         type=str,
-        default="data/metadata_blacklist",
+        default="data/metadata_noblacklist",
         help="Directory containing patch metadata",
     )
     parser.add_argument(
@@ -243,6 +245,12 @@ if __name__ == "__main__":
         type=float,
         default=1.0,
         help="Fraction of dataset to use (0.0-1.0)",
+    )
+    parser.add_argument(
+        "--target_neg_ratio",
+        type=float,
+        default=0.8,
+        help="Target negative pair ratios to have in training dataset (0.0-1.0)",
     )
     parser.add_argument(
         "--subset_seed", type=int, default=42, help="Random seed for subset selection"
