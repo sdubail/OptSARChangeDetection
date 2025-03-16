@@ -70,7 +70,7 @@ def main(args):
         transform=val_transform,
         cache_size=args.image_cache_size,
         subset_fraction=args.subset_fraction,
-        target_neg_ratio=None,
+        target_neg_ratio=args.target_neg_ratio,
         seed=args.subset_seed,
     )
 
@@ -132,7 +132,8 @@ def main(args):
     val_loader = DataLoader(
         val_dataset,
         batch_size=config["training"]["batch_size"],
-        shuffle=False,
+        sampler=sampler,  # testing with a sampler...
+        shuffle=False,  # Important: set to False when using a custom sampler
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
         persistent_workers=True,

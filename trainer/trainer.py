@@ -182,10 +182,10 @@ class ContrastiveTrainer:
                 outputs = self.model(optical=pre_patches, sar=post_patches)
 
                 # Compute loss
-                loss = self.criterion(
+                pos_loss, neg_loss = self.criterion(
                     outputs["pre_projected"], outputs["post_projected"], is_positive
                 )
-
+                loss = pos_loss + neg_loss
                 # Backward and optimize
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -201,18 +201,28 @@ class ContrastiveTrainer:
                 # Collect predictions for evaluation
                 if "change_score" in outputs:
                     predictions = (
-                        outputs["change_score"] < 0.5
+                        outputs["change_score"]
+                        < 1.0  # change score is between 0 and 2.
                     ).float()  # Low score = positive pair
                     all_preds.extend(predictions.cpu().numpy())
                     all_targets.extend(is_positive.cpu().numpy())
 
                 # Update progress bar
-                pbar.set_postfix({"loss": loss.item()})
+                pbar.set_postfix(
+                    {
+                        "loss": loss.item(),
+                        "pos_loss": pos_loss.item(),
+                        "neg_loss": neg_loss.item(),
+                    }
+                )
 
                 # Log batch metrics at intervals
                 if batch_idx % self.log_interval == 0:
                     self.logger.info(
-                        f"Train Batch {batch_idx}/{len(self.train_loader)} - Loss: {loss.item():.4f}"
+                        f"""Train Batch {batch_idx}/{len(self.train_loader)} 
+                        - Loss: {loss.item():.4f} 
+                        - Pos Loss: {pos_loss.item():.4f}  
+                        - Neg Loss: {neg_loss.item():.4f}"""
                     )
 
         # Calculate average loss and accuracy
@@ -246,11 +256,12 @@ class ContrastiveTrainer:
                     outputs = self.model(optical=pre_patches, sar=post_patches)
 
                     # Compute loss
-                    loss = self.criterion(
+                    pos_loss, neg_loss = self.criterion(
                         outputs["pre_projected"], outputs["post_projected"], is_positive
                     )
 
                     # Update statistics
+                    loss = pos_loss + neg_loss
                     epoch_loss += loss.item()
 
                     # Collect predictions for evaluation
@@ -262,7 +273,13 @@ class ContrastiveTrainer:
                         all_targets.extend(is_positive.cpu().numpy())
 
                     # Update progress bar
-                    pbar.set_postfix({"loss": loss.item()})
+                    pbar.set_postfix(
+                        {
+                            "loss": loss.item(),
+                            "pos_loss": pos_loss.item(),
+                            "neg_loss": neg_loss.item(),
+                        }
+                    )
 
         # Calculate average loss and accuracy
         epoch_loss /= len(self.val_loader)

@@ -91,7 +91,12 @@ class InfoNCEContrastiveLoss(nn.Module):
         pair_similarities = similarity_matrix.diagonal()
 
         # Initialize loss with a tensor that supports gradient calculation
-        loss = torch.zeros(1, device=optical_features.device, requires_grad=True)
+        neg_loss_tot = torch.zeros(
+            1, device=optical_features.device, requires_grad=True
+        )
+        pos_loss_tot = torch.zeros(
+            1, device=optical_features.device, requires_grad=True
+        )
         n_comparisons = 0
 
         # Create masks for positive and negative examples
@@ -119,12 +124,12 @@ class InfoNCEContrastiveLoss(nn.Module):
 
                 # Calculate InfoNCE-style loss (bring positives closer, push negatives away)
                 pos_loss = -torch.log(pos_exp / (pos_exp + neg_exp_sum + 1e-8))
-                loss = loss + pos_loss.sum()
+                pos_loss_tot = pos_loss_tot + pos_loss.sum()
                 n_comparisons += n_positives
             else:
                 # If no negative examples, simply maximize similarity for positive pairs
                 pos_loss = -pos_similarities
-                loss = loss + pos_loss.sum()
+                pos_loss_tot = pos_loss_tot + pos_loss.sum()
                 n_comparisons += n_positives
 
         # PART 2: Process negative examples (damaged buildings)
@@ -133,8 +138,8 @@ class InfoNCEContrastiveLoss(nn.Module):
             neg_similarities = pair_similarities[neg_mask]
 
             # Minimize similarity for negative pairs (push damaged pairs apart)
-            neg_loss = neg_similarities
-            loss = loss + neg_loss.sum()
+            neg_loss = torch.log(1 + torch.exp(neg_similarities))
+            neg_loss_tot = neg_loss_tot + neg_loss.sum()
             n_comparisons += n_negatives
 
         # Handle the case where no comparisons are made (empty batch or all one class)
@@ -142,7 +147,7 @@ class InfoNCEContrastiveLoss(nn.Module):
             return torch.zeros(1, requires_grad=True, device=optical_features.device)
 
         # Return average loss
-        return loss / n_comparisons
+        return pos_loss_tot / n_comparisons, neg_loss_tot / n_comparisons
 
 
 # class CombinedLoss(nn.Module):
