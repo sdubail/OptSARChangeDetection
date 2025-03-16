@@ -42,10 +42,12 @@ class SimpleDatasetLoader:
         blacklist = np.loadtxt(blacklist_path, dtype=str, delimiter=",")[:, 0]
         # Get list of image names
         post_event_dir = self.root_dir / split / "post-event"
+
         self.image_ids = [
             f.name.replace("_post_disaster.tif", "")
             for f in post_event_dir.glob("*_post_disaster.tif")
-            if not exclude_blacklist or f.name not in blacklist
+            if not exclude_blacklist
+            or f.name.replace("_post_disaster.tif", "") not in blacklist
         ][:limit]
         logger.info(f"Found {len(self.image_ids)} images for {split} split")
 
@@ -364,6 +366,11 @@ def main():
         "--train_ratio", type=float, default=0.8, help="Train/val split ratio"
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--include_blacklist",
+        action="store_true",
+        help="Include the images present in the blacklist",
+    )
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
@@ -384,6 +391,7 @@ def main():
         blacklist_path=config["data"]["blacklist_path"],
         split="train",
         limit=args.limit,
+        exclude_blacklist=not args.include_blacklist,
     )
 
     # Initialize lists to collect all metadata
