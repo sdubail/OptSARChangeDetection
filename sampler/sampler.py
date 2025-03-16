@@ -1,131 +1,152 @@
 import numpy as np
 import torch
 
+# class WarmupSampler(torch.utils.data.Sampler):
+#     def __init__(self, dataset, batch_size, warmup_epochs=2, seed=42):
+#         self.dataset = dataset
+#         self.batch_size = batch_size
+#         self.warmup_epochs = warmup_epochs
+#         self.epoch = 0
+#         self.rng = np.random.RandomState(seed)
 
-class WarmupSampler(torch.utils.data.Sampler):
-    def __init__(self, dataset, batch_size, warmup_epochs=2, seed=42):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.warmup_epochs = warmup_epochs
-        self.epoch = 0
-        self.rng = np.random.RandomState(seed)
+#         # Extract positive and negative indices
+#         self.positive_indices = np.array(
+#             [i for i, meta in enumerate(dataset.metadata) if meta["is_positive"]]
+#         )
+#         self.negative_indices = np.array(
+#             [i for i, meta in enumerate(dataset.metadata) if not meta["is_positive"]]
+#         )
 
-        # Extract positive and negative indices
-        self.positive_indices = np.array(
-            [i for i, meta in enumerate(dataset.metadata) if meta["is_positive"]]
-        )
-        self.negative_indices = np.array(
-            [i for i, meta in enumerate(dataset.metadata) if not meta["is_positive"]]
-        )
+#         # Compute the true positive ratio in the dataset
+#         self.warmup_ratio = len(self.positive_indices) / len(self.dataset)
+#         print(f"Warmup ratio: {self.warmup_ratio:.4f}")
 
-        # Compute the true positive ratio in the dataset
-        self.warmup_ratio = len(self.positive_indices) / len(self.dataset)
-        print(f"Warmup ratio: {self.warmup_ratio:.4f}")
+#     def __iter__(self):
+#         if self.epoch < self.warmup_epochs:
+#             # Adjust the warmup ratio based on available data
+#             pos_per_batch = int(self.batch_size * self.warmup_ratio)
+#             neg_per_batch = self.batch_size - pos_per_batch
 
-    def __iter__(self):
-        if self.epoch < self.warmup_epochs:
-            # Adjust the warmup ratio based on available data
-            pos_per_batch = int(self.batch_size * self.warmup_ratio)
-            neg_per_batch = self.batch_size - pos_per_batch
+#             num_batches = len(self.dataset) // self.batch_size
+#             batches = []
 
-            num_batches = len(self.dataset) // self.batch_size
-            batches = []
+#             for _ in range(num_batches):
+#                 batch_pos = self.rng.choice(
+#                     self.positive_indices, size=pos_per_batch, replace=False
+#                 ).tolist()
+#                 batch_neg = self.rng.choice(
+#                     self.negative_indices, size=neg_per_batch, replace=False
+#                 ).tolist()
+#                 batches.append(batch_pos + batch_neg)
 
-            for _ in range(num_batches):
-                batch_pos = self.rng.choice(
-                    self.positive_indices, size=pos_per_batch, replace=False
-                ).tolist()
-                batch_neg = self.rng.choice(
-                    self.negative_indices, size=neg_per_batch, replace=False
-                ).tolist()
-                batches.append(batch_pos + batch_neg)
+#             indices = [idx for batch in batches for idx in batch]
 
-            indices = [idx for batch in batches for idx in batch]
+#             # Handle remaining samples
+#             remaining = len(self.dataset) % self.batch_size
+#             if remaining > 0:
+#                 remaining_indices = self.rng.choice(
+#                     len(self.dataset), size=remaining, replace=False
+#                 ).tolist()
+#                 indices.extend(remaining_indices)
 
-            # Handle remaining samples
-            remaining = len(self.dataset) % self.batch_size
-            if remaining > 0:
-                remaining_indices = self.rng.choice(
-                    len(self.dataset), size=remaining, replace=False
-                ).tolist()
-                indices.extend(remaining_indices)
+#             return iter(indices)
+#         else:
+#             # After warmup: Fully shuffle dataset
+#             indices = self.rng.permutation(len(self.dataset)).tolist()
+#             return iter(indices)
 
-            return iter(indices)
-        else:
-            # After warmup: Fully shuffle dataset
-            indices = self.rng.permutation(len(self.dataset)).tolist()
-            return iter(indices)
+#     def __len__(self):
+#         return len(self.dataset)
 
-    def __len__(self):
-        return len(self.dataset)
-
-    def set_epoch(self, epoch):
-        self.epoch = epoch
-        self.rng = np.random.RandomState(
-            42 + epoch
-        )  # Update RNG with deterministic seed
+#     def set_epoch(self, epoch):
+#         self.epoch = epoch
+#         self.rng = np.random.RandomState(
+#             42 + epoch
+#         )  # Update RNG with deterministic seed
 
 
 class RatioSampler(torch.utils.data.Sampler):
-    def __init__(self, dataset, batch_size, neg_ratio=0.8, seed=42):
+    def __init__(self, dataset, batch_size, neg_ratio=0.8, tolerance=0.1, seed=42):
         """
-        Sampler that strictly enforces a specific ratio of negative to positive samples in each batch.
-        Will oversample the minority class (typically negatives) to maintain the ratio.
+        Sampler that enforces a specific ratio of negative to positive samples in each batch.
+        Will only resample if the dataset's ratio is outside the tolerance range.
 
         Args:
-            dataset: Dataset to sample from (must have metadata with is_positive field)
+            dataset: OnTheFlyNumpyDataset to sample from
             batch_size: Size of each batch
             neg_ratio: Desired ratio of negative samples (0.0-1.0)
+            tolerance: Tolerance for ratio difference (0.0-1.0)
             seed: Random seed for reproducibility
         """
         self.dataset = dataset
         self.batch_size = batch_size
         self.neg_ratio = neg_ratio
         self.pos_ratio = 1.0 - neg_ratio
+        self.tolerance = tolerance
         self.epoch = 0
         self.rng = np.random.RandomState(seed)
 
-        # Extract positive and negative indices
-        self.positive_indices = np.array(
-            [i for i, meta in enumerate(dataset.metadata) if meta["is_positive"]]
-        )
-        self.negative_indices = np.array(
-            [i for i, meta in enumerate(dataset.metadata) if not meta["is_positive"]]
-        )
+        # Get current dataset ratio
+        current_pos_ratio = dataset.get_pos_neg_ratio()
+        current_neg_ratio = 1.0 - current_pos_ratio
 
-        # Compute dataset statistics
+        # Determine if we need to enforce ratio
+        self.enforce_ratio = abs(current_neg_ratio - neg_ratio) > tolerance
+
+        self.positive_indices = dataset.selected_pos_indices
+        self.negative_indices = dataset.selected_neg_indices
+
+        # Compute statistics
         self.n_pos = len(self.positive_indices)
         self.n_neg = len(self.negative_indices)
-        self.dataset_pos_ratio = self.n_pos / len(self.dataset)
+        self.dataset_pos_ratio = self.n_pos / (self.n_pos + self.n_neg)
+        self.dataset_neg_ratio = 1.0 - self.dataset_pos_ratio
 
         print("Dataset statistics:")
-        print(f"  - Total samples: {len(self.dataset)}")
+        print(f"  - Total samples: {len(dataset)}")
         print(f"  - Positive samples: {self.n_pos} ({self.dataset_pos_ratio:.2%})")
-        print(f"  - Negative samples: {self.n_neg} ({1-self.dataset_pos_ratio:.2%})")
+        print(f"  - Negative samples: {self.n_neg} ({self.dataset_neg_ratio:.2%})")
         print(
             f"Target sampling ratio - Negative: {self.neg_ratio:.2%}, Positive: {self.pos_ratio:.2%}"
         )
 
-        # Calculate how many samples of each class we need per batch
-        self.neg_per_batch = int(self.batch_size * self.neg_ratio)
-        self.pos_per_batch = self.batch_size - self.neg_per_batch
-
-        print(
-            f"Each batch will contain {self.neg_per_batch} negative and {self.pos_per_batch} positive samples"
-        )
-
-        # Calculate oversampling statistics
-        total_neg_needed = self.neg_per_batch * (
-            len(self.dataset) // self.batch_size + 1
-        )
-        neg_oversampling_factor = total_neg_needed / self.n_neg
-        if neg_oversampling_factor > 1:
+        if self.enforce_ratio:
             print(
-                f"Negative samples will be oversampled by approximately {neg_oversampling_factor:.2f}x"
+                f"Current ratio differs from target by more than {tolerance:.1%}, will enforce target ratio"
+            )
+
+            # Calculate how many samples of each class we need per batch
+            self.neg_per_batch = int(self.batch_size * self.neg_ratio)
+            self.pos_per_batch = self.batch_size - self.neg_per_batch
+
+            print(
+                f"Each batch will contain {self.neg_per_batch} negative and {self.pos_per_batch} positive samples"
+            )
+
+            # Calculate oversampling statistics
+            total_batches = len(dataset) // self.batch_size + (
+                1 if len(dataset) % self.batch_size > 0 else 0
+            )
+            total_neg_needed = self.neg_per_batch * total_batches
+            neg_oversampling_factor = total_neg_needed / self.n_neg
+            if neg_oversampling_factor > 1:
+                print(
+                    f"Negative samples will be oversampled by approximately {neg_oversampling_factor:.2f}x"
+                )
+        else:
+            print(
+                f"Current ratio {self.dataset_neg_ratio:.2%} is within tolerance of target {self.neg_ratio:.2%}, using regular shuffling"
             )
 
     def __iter__(self):
-        """Generate batches with the enforced negative/positive ratio."""
+        """Generate batches with or without enforced ratio."""
+        if not self.enforce_ratio:
+            # If dataset already has the right ratio, just shuffle
+            indices = np.concatenate([self.positive_indices, self.negative_indices])
+            self.rng.shuffle(indices)
+            return iter(indices)
+
+        # Otherwise, enforce ratio per batch
         # Calculate number of batches
         n_batches = len(self.dataset) // self.batch_size
         if len(self.dataset) % self.batch_size > 0:

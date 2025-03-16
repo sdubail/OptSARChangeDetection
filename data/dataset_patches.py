@@ -103,23 +103,23 @@ class PreprocessedPatchDataset(Dataset):
         if h5_idx in self.cache:
             pre_patch = self.cache[h5_idx]["pre_patch"]
             post_patch = self.cache[h5_idx]["post_patch"]
-            label = self.cache[h5_idx]["label"]
+            # label = self.cache[h5_idx]["label"]
         else:
             # Load from HDF5
             pre_patch = self.h5_file["pre_patches"][h5_idx]
             post_patch = self.h5_file["post_patches"][h5_idx]
-            label = self.h5_file["labels"][h5_idx]
+            # label = self.h5_file["labels"][h5_idx]
 
-            # Squeeze singleton dimensions from label
-            if label.ndim > 3:
-                label = np.squeeze(label, axis=-1)
+            # # Squeeze singleton dimensions from label
+            # if label.ndim > 3:
+            #     label = np.squeeze(label, axis=-1)
 
             # Add to cache
             if len(self.cache) < self.cache_size:
                 self.cache[h5_idx] = {
                     "pre_patch": pre_patch,
                     "post_patch": post_patch,
-                    "label": label,
+                    # "label": label,
                 }
 
         # Get metadata
@@ -127,22 +127,22 @@ class PreprocessedPatchDataset(Dataset):
 
         # Apply transforms
         if self.transform:
-            transformed = self.transform(pre_patch, post_patch, label)
+            transformed = self.transform(pre_patch, post_patch)  # , label)
             pre_patch = transformed["pre_image"]
             post_patch = transformed["post_image"]
-            label = transformed["label"]
+            # label = transformed["label"]
 
         # Convert to tensor if not already
         # if not isinstance(pre_patch, torch.Tensor):
         #     print("normalising")
         pre_patch = self._to_tensor_optical(pre_patch)
         post_patch = self._to_tensor_sar(post_patch)
-        label = torch.from_numpy(label.copy()).long()
+        # label = torch.from_numpy(label.copy()).long()
 
         return {
             "pre_patch": pre_patch,
             "post_patch": post_patch,
-            "label": label,
+            # "label": label,
             "is_positive": torch.tensor([float(is_positive)], dtype=torch.float32),
             "idx": idx,
             "image_id": meta["image_id"],

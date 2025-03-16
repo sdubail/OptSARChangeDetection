@@ -2,6 +2,7 @@
 **/__pycache__/
 .DS_Store
 **/processed_patches**
+**/metadata**
 **/output
 .vscode
 **/dfc25_track2_trainval.zip

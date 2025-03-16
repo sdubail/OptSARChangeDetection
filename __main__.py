@@ -7,14 +7,14 @@ import torch.optim as optim
 import yaml
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-# Import the preprocessed patch dataset
 from data.dataset_patches import PreprocessedPatchDataset
+from data.dataset_patchonthefly import OnTheFlyPatchDataset
 from data.transforms import get_transform
 from losses.contrastive_loss import InfoNCEContrastiveLoss, SupervisedContrastiveLoss
 from models.pseudo_siamese import (
     MultimodalDamageNet,  # Using your original model with minimal changes
 )
-from sampler.sampler import RatioSampler, WarmupSampler
+from sampler.sampler import RatioSampler  # , WarmupSampler
 from trainer.trainer import ContrastiveTrainer
 
 
@@ -33,22 +33,44 @@ def main(args):
     train_transform = get_transform("train") if args.use_transforms else None
     val_transform = get_transform("val") if args.use_transforms else None
 
-    print("Loading preprocessed patch datasets...")
-    train_dataset = PreprocessedPatchDataset(
-        patch_dir=args.patch_dir,
+    # print("Loading preprocessed patch datasets...")
+    # train_dataset = PreprocessedPatchDataset(
+    #     patch_dir=args.patch_dir,
+    #     split="train",
+    #     transform=train_transform,
+    #     cache_size=args.cache_size,
+    #     subset_fraction=args.subset_fraction,
+    #     seed=args.subset_seed,
+    # )
+
+    # val_dataset = PreprocessedPatchDataset(
+    #     patch_dir=args.patch_dir,
+    #     split="val",
+    #     transform=val_transform,
+    #     cache_size=args.cache_size,
+    #     subset_fraction=args.subset_fraction,
+    #     seed=args.subset_seed,
+    # )
+
+    train_dataset = OnTheFlyPatchDataset(
+        root_dir=config["data"]["root_dir"],
+        metadata_dir=args.metadata_dir,
         split="train",
         transform=train_transform,
-        cache_size=args.cache_size,
+        cache_size=args.image_cache_size,
         subset_fraction=args.subset_fraction,
+        target_neg_ratio=args.target_neg_ratio,
         seed=args.subset_seed,
     )
 
-    val_dataset = PreprocessedPatchDataset(
-        patch_dir=args.patch_dir,
+    val_dataset = OnTheFlyPatchDataset(
+        root_dir=config["data"]["root_dir"],
+        metadata_dir=args.metadata_dir,
         split="val",
         transform=val_transform,
-        cache_size=args.cache_size,
+        cache_size=args.image_cache_size,
         subset_fraction=args.subset_fraction,
+        target_neg_ratio=args.target_neg_ratio,
         seed=args.subset_seed,
     )
 
@@ -90,16 +112,22 @@ def main(args):
     #     warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
     # )
 
-    sampler = RatioSampler(
+    train_sampler = RatioSampler(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        neg_ratio=0.8,  # 80% negative, 20% positive
+        neg_ratio=args.target_neg_ratio,
+    )
+
+    val_sampler = RatioSampler(
+        val_dataset,
+        batch_size=config["training"]["batch_size"],
+        neg_ratio=args.target_neg_ratio,
     )
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        sampler=sampler,
+        sampler=train_sampler,
         shuffle=False,  # Important: set to False when using a custom sampler
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
@@ -110,7 +138,8 @@ def main(args):
     val_loader = DataLoader(
         val_dataset,
         batch_size=config["training"]["batch_size"],
-        shuffle=False,
+        sampler=val_sampler,  # testing with a sampler...
+        shuffle=False,  # Important: set to False when using a custom sampler
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
         persistent_workers=True,
@@ -184,6 +213,18 @@ if __name__ == "__main__":
         help="Path to configuration file",
     )
     parser.add_argument(
+        "--metadata_dir",
+        type=str,
+        default="data/metadata_noblacklist",
+        help="Directory containing patch metadata",
+    )
+    parser.add_argument(
+        "--image_cache_size",
+        type=int,
+        default=50,
+        help="Number of full images to cache in memory",
+    )
+    parser.add_argument(
         "--patch_dir",
         type=str,
         default="data/processed_patches",
@@ -211,6 +252,12 @@ if __name__ == "__main__":
         type=float,
         default=1.0,
         help="Fraction of dataset to use (0.0-1.0)",
+    )
+    parser.add_argument(
+        "--target_neg_ratio",
+        type=float,
+        default=0.8,
+        help="Target negative pair ratios to have in training dataset (0.0-1.0)",
     )
     parser.add_argument(
         "--subset_seed", type=int, default=42, help="Random seed for subset selection"
