@@ -13,7 +13,7 @@ patch_stride: 8              # Stride for patch extraction
 pos_threshold: 0.05           # Maximum damage ratio for positive pairs
 min_valid_pixels: 0.8         # Minimum ratio of valid pixels needed
 positive_ratio: 0.5           # Target ratio of positive samples
-max_pairs_per_image: 500      # Maximum number of pairs to extract per image
+max_pairs_per_image: 500      # Maximum number of pairs to extract per image - ONLY FOR SMALL PATCH VERSION
 
 # Model parameters
 model:
