@@ -112,16 +112,22 @@ def main(args):
     #     warmup_epochs=config["warmup"]["warmup_epochs"],  # Adjust as needed
     # )
 
-    sampler = RatioSampler(
+    train_sampler = RatioSampler(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        neg_ratio=0.8,  # 80% negative, 20% positive
+        neg_ratio=args.target_neg_ratio,
+    )
+
+    val_sampler = RatioSampler(
+        val_dataset,
+        batch_size=config["training"]["batch_size"],
+        neg_ratio=args.target_neg_ratio,
     )
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        sampler=sampler,
+        sampler=train_sampler,
         shuffle=False,  # Important: set to False when using a custom sampler
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
@@ -132,7 +138,7 @@ def main(args):
     val_loader = DataLoader(
         val_dataset,
         batch_size=config["training"]["batch_size"],
-        sampler=sampler,  # testing with a sampler...
+        sampler=val_sampler,  # testing with a sampler...
         shuffle=False,  # Important: set to False when using a custom sampler
         num_workers=config["data"]["num_workers"],
         pin_memory=True,
