@@ -70,6 +70,16 @@ class SimpleDatasetLoader:
                 # Single-band image
                 return data_reader.read(1)[..., np.newaxis]
 
+    def get_by_image_id(self, image_id):
+        """Get a sample by image ID."""
+        try:
+            # Find the index of the image with the given ID
+            idx = self.image_ids.index(image_id)
+            # Return the item at that index
+            return self[idx]
+        except ValueError:
+            raise ValueError(f"Image ID '{image_id}' not found in the dataset")
+
     def __getitem__(self, idx):
         """Get a pre-event optical, post-event SAR, and damage label triplet."""
         image_id = self.image_ids[idx]
