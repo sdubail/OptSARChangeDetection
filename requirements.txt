@@ -9,3 +9,5 @@ PyYAML
 pathlib
 h5py
 scikit-learn
+typer
+rich
