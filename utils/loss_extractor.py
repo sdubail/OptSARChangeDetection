@@ -4,7 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-path = Path("output/nofreeze-p0.03-lr0.00001-targetneg0.8.txt")
+path = Path("output/nofreeze-p0.03-lr0.000001-targetneg0.8.txt")
 
 logs = open(path).read()
 

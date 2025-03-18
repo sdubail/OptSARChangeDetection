@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 from rich.table import Table
+from rich.traceback import install
 from torch.utils.data import DataLoader
 
 from data.dataset_patches import PreprocessedPatchDataset
@@ -32,6 +33,7 @@ from trainer.trainer import ContrastiveTrainer
 
 app = typer.Typer(help="OptSARChangeDetection - Multimodal Change Detection Framework")
 console = Console()
+install(show_locals=False, width=120, word_wrap=True)
 
 train_app = typer.Typer(help="Training commands")
 infer_app = typer.Typer(help="Inference commands")
