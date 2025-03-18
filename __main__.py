@@ -506,7 +506,6 @@ def infer_predict(
         cellLoc="center",
     )
 
-    # Pas besoin d'add_table car la méthode table() l'ajoute directement
     axes[0, 2].set_title("Metrics by Threshold")
 
     # Binary change maps for different thresholds (bottom row)
