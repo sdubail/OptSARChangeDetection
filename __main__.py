@@ -366,7 +366,7 @@ def infer_predict(
         config_data["num_workers"] = num_workers
 
         # Create output directory
-        output_dir = Path(output_dira)
+        output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Load model
