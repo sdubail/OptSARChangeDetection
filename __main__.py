@@ -490,7 +490,7 @@ def infer_predict(
     axes[0, 2].axis("off")
 
     # Create a table with metrics
-    metrics_table = plt.table(
+    metrics_table = axes[0, 2].table(
         cellText=[
             [
                 f"{r['threshold']:.2f}",
@@ -505,7 +505,8 @@ def infer_predict(
         loc="center",
         cellLoc="center",
     )
-    axes[0, 2].add_table(metrics_table)
+
+    # Pas besoin d'add_table car la méthode table() l'ajoute directement
     axes[0, 2].set_title("Metrics by Threshold")
 
     # Binary change maps for different thresholds (bottom row)
