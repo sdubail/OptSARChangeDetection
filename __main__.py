@@ -31,12 +31,16 @@ from models.pseudo_siamese import MultimodalDamageNet
 from sampler.sampler import RatioSampler
 from trainer.trainer import ContrastiveTrainer
 
-app = typer.Typer(help="OptSARChangeDetection - Multimodal Change Detection Framework")
-console = Console()
 install(show_locals=False, width=120, word_wrap=True)
 
-train_app = typer.Typer(help="Training commands")
-infer_app = typer.Typer(help="Inference commands")
+app = typer.Typer(
+    pretty_exceptions_show_locals=False,
+    help="OptSARChangeDetection - Multimodal Change Detection Framework",
+)
+console = Console()
+
+train_app = typer.Typer(pretty_exceptions_show_locals=False, help="Training commands")
+infer_app = typer.Typer(pretty_exceptions_show_locals=False, help="Inference commands")
 
 app.add_typer(train_app, name="train")
 app.add_typer(infer_app, name="infer")
@@ -362,7 +366,7 @@ def infer_predict(
         config_data["num_workers"] = num_workers
 
         # Create output directory
-        output_dir = Path(output_dir)
+        output_dir = Path(output_dira)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Load model
