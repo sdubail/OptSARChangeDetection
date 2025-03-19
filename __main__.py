@@ -25,6 +25,7 @@ from inference.change_map_generator import (
     compute_iou,
     create_change_map,
     visualize_change_map,
+    visualize_damage,
 )
 from losses.contrastive_loss import InfoNCEContrastiveLoss, SupervisedContrastiveLoss
 from models.pseudo_siamese import MultimodalDamageNet
@@ -483,7 +484,7 @@ def infer_predict(
     axes[0, 0].axis("off")
 
     # Ground truth (top-middle)
-    axes[0, 1].imshow(label, cmap="gray")
+    axes[0, 1].imshow(visualize_damage(label))
     axes[0, 1].set_title("Ground Truth")
     axes[0, 1].axis("off")
 

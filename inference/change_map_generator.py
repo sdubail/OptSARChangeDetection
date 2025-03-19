@@ -153,6 +153,32 @@ class PatchDataset(Dataset):
         return img
 
 
+def visualize_damage(damage_img):
+    """Create a color visualization of damage levels."""
+    # Define colors for damage levels (0 to 4)
+    colors = np.array(
+        [
+            [0, 0, 0],  # 0: No damage (black)
+            [0, 255, 0],  # 1: Minor damage (green)
+            [255, 255, 0],  # 2: Moderate damage (yellow)
+            [255, 127, 0],  # 3: Major damage (orange)
+            [255, 0, 0],  # 4: Destroyed (red)
+        ]
+    )
+
+    # Create RGB image
+    h, w = damage_img.shape
+    rgb = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Fill with colors based on damage values
+    for i in range(5):  # 5 damage levels
+        mask = damage_img == i
+        if np.any(mask):
+            rgb[mask] = colors[i]
+
+    return rgb
+
+
 def create_change_map(
     model: torch.nn.Module,
     pre_img: np.ndarray,
