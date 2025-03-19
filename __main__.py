@@ -483,7 +483,7 @@ def infer_predict(
     axes[0, 0].axis("off")
 
     # Ground truth (top-middle)
-    axes[0, 1].imshow(label > 0, cmap="gray")
+    axes[0, 1].imshow(label, cmap="gray")
     axes[0, 1].set_title("Ground Truth")
     axes[0, 1].axis("off")
 
@@ -815,8 +815,9 @@ def infer_evaluate(
 
                 # Evaluate each image
                 for change_map, (_, _, label) in zip(change_maps, image_data):
+                    label_binary = np.where(label > 1, 1, 0)
                     iou, precision, recall = compute_iou(
-                        change_map, label, threshold=thresh
+                        change_map, label_binary, threshold=thresh
                     )
                     ious.append(iou)
                     precisions.append(precision)
@@ -915,7 +916,10 @@ def infer_evaluate(
             )
 
             # Compute metrics
-            iou, precision, recall = compute_iou(change_map, label, threshold=threshold)
+            label_binary = np.where(label > 1, 1, 0)
+            iou, precision, recall = compute_iou(
+                change_map, label_binary, threshold=threshold
+            )
 
             # Store results
             results["image_id"].append(image_id)
