@@ -448,8 +448,9 @@ def infer_predict(
 
     # Compute metrics for each threshold
     results = []
+    label_binary = np.where(label > 1, 1, 0)
     for thresh in thresholds:
-        iou, precision, recall = compute_iou(change_map, label, threshold=thresh)
+        iou, precision, recall = compute_iou(change_map, label_binary, threshold=thresh)
         f1 = (
             2 * precision * recall / (precision + recall)
             if (precision + recall) > 0
