@@ -102,7 +102,11 @@ class ContrastiveTrainer:
 
         # Metrics tracking
         train_losses = []
+        train_losses_pos = []
+        train_losses_neg = []
         val_losses = []
+        val_losses_pos = []
+        val_losses_neg = []
         train_accuracies = []
         val_accuracies = []
 
@@ -112,14 +116,18 @@ class ContrastiveTrainer:
                 self.train_loader.sampler.set_epoch(epoch)
 
             # Training
-            train_loss, train_acc = self._train_epoch(epoch)
+            train_loss, train_acc, train_loss_pos, train_loss_neg = self._train_epoch(epoch)
             train_losses.append(train_loss)
             train_accuracies.append(train_acc)
+            train_losses_pos.append(train_loss_pos)
+            train_losses_neg.append(train_loss_neg)
 
             # Validation
-            val_loss, val_acc = self._validate_epoch(epoch)
+            val_loss, val_acc, val_loss_pos, val_loss_neg = self._validate_epoch(epoch)
             val_losses.append(val_loss)
             val_accuracies.append(val_acc)
+            val_losses_pos.append(val_loss_pos)
+            val_losses_neg.append(val_loss_neg)
 
             if self.monitor_gradients:
                 self.gradient_monitor.after_epoch(epoch)
@@ -148,13 +156,17 @@ class ContrastiveTrainer:
 
         # Plot training curves
         self._plot_training_curves(
-            train_losses, val_losses, train_accuracies, val_accuracies
+            train_losses, val_losses, train_accuracies, val_accuracies, train_losses_pos, train_losses_neg, val_losses_pos, val_losses_neg
         )
         # save training curves as numpy arrays
         np.save(self.output_dir / "train_losses.npy", np.array(train_losses))
         np.save(self.output_dir / "val_losses.npy", np.array(val_losses))
         np.save(self.output_dir / "train_accuracies.npy", np.array(train_accuracies))
         np.save(self.output_dir / "val_accuracies.npy", np.array(val_accuracies))
+        np.save(self.output_dir / "train_losses_pos.npy", np.array(train_losses_pos))
+        np.save(self.output_dir / "train_losses_neg.npy", np.array(train_losses_neg))
+        np.save(self.output_dir / "val_losses_pos.npy", np.array(val_losses_pos))
+        np.save(self.output_dir / "val_losses_neg.npy", np.array(val_losses_neg))
 
         # Save
         # log best validation loss
@@ -166,6 +178,8 @@ class ContrastiveTrainer:
         """Train for one epoch."""
         self.model.train()
         epoch_loss = 0
+        epoch_loss_pos = 0
+        epoch_loss_neg = 0
         all_preds = []
         all_targets = []
 
@@ -193,7 +207,9 @@ class ContrastiveTrainer:
 
                 # Update statistics
                 epoch_loss += loss.item()
-
+                epoch_loss_pos += pos_loss.item()
+                epoch_loss_neg += neg_loss.item()
+                
                 # Call gradient monitor after backward pass (if enabled)
                 if self.monitor_gradients:
                     self.gradient_monitor.after_batch(epoch, batch_idx, outputs, loss)
@@ -227,18 +243,22 @@ class ContrastiveTrainer:
 
         # Calculate average loss and accuracy
         epoch_loss /= len(self.train_loader)
+        epoch_loss_pos /= len(self.train_loader)
+        epoch_loss_neg /= len(self.train_loader)
 
         # Calculate accuracy if we have predictions
         epoch_acc = 0
         if all_preds and all_targets:
             epoch_acc = balanced_accuracy_score(all_targets, all_preds)
 
-        return epoch_loss, epoch_acc
+        return epoch_loss, epoch_acc, epoch_loss_pos, epoch_loss_neg
 
     def _validate_epoch(self, epoch):
         """Validate for one epoch."""
         self.model.eval()
         epoch_loss = 0
+        epoch_loss_pos = 0
+        epoch_loss_neg = 0
         all_preds = []
         all_targets = []
 
@@ -263,7 +283,9 @@ class ContrastiveTrainer:
                     # Update statistics
                     loss = pos_loss + neg_loss
                     epoch_loss += loss.item()
-
+                    epoch_loss_pos += pos_loss.item()
+                    epoch_loss_neg += neg_loss.item()
+                    
                     # Collect predictions for evaluation
                     if "change_score" in outputs:
                         predictions = (
@@ -283,13 +305,16 @@ class ContrastiveTrainer:
 
         # Calculate average loss and accuracy
         epoch_loss /= len(self.val_loader)
+        epoch_loss_pos /= len(self.val_loader)
+        epoch_loss_neg /= len(self.val_loader)
+        
 
         # Calculate accuracy if we have predictions
         epoch_acc = 0
         if all_preds and all_targets:
             epoch_acc = balanced_accuracy_score(all_targets, all_preds)
 
-        return epoch_loss, epoch_acc
+        return epoch_loss, epoch_acc, epoch_loss_pos, epoch_loss_neg
 
     def _save_checkpoint(self, epoch, val_loss, val_acc, is_best=False):
         """Save model checkpoint."""
@@ -334,12 +359,12 @@ class ContrastiveTrainer:
             checkpoint.get("val_acc", None),
         )
 
-    def _plot_training_curves(self, train_losses, val_losses, train_accs, val_accs):
+    def _plot_training_curves(self, train_losses, val_losses, train_accs, val_accs, train_losses_pos, train_losses_neg, val_losses_pos, val_losses_neg):
         """Plot training curves."""
         plt.figure(figsize=(12, 5))
 
         # Loss curve
-        plt.subplot(1, 2, 1)
+        plt.subplot(1, 3, 1)
         plt.plot(train_losses, label="Train Loss")
         plt.plot(val_losses, label="Val Loss")
         plt.title("Loss Curves")
@@ -347,9 +372,25 @@ class ContrastiveTrainer:
         plt.ylabel("Loss")
         plt.legend()
         plt.grid(True)
+        
 
+        # Loss curve subterms
+        plt.subplot(1, 3, 2)
+        plt.plot(train_losses, label="Train Loss")
+        plt.plot(val_losses, label="Val Loss")
+        plt.plot(train_losses_pos, label="Train Pos Loss")
+        plt.plot(train_losses_neg, label="Train Neg Loss")
+        plt.plot(val_losses_pos, label="Val Pos Loss")
+        plt.plot(val_losses_neg, label="Val Neg Loss")
+        plt.title("Loss Curves")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.grid(True)
+        
+        
         # Accuracy curve
-        plt.subplot(1, 2, 2)
+        plt.subplot(1, 3, 3)
         plt.plot(train_accs, label="Train Accuracy")
         plt.plot(val_accs, label="Val Accuracy")
         plt.title("Accuracy Curves")
