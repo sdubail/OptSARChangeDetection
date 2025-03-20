@@ -147,7 +147,8 @@ class InfoNCEContrastiveLoss(nn.Module):
             return torch.zeros(1, requires_grad=True, device=optical_features.device)
 
         # Return average loss
-        return pos_loss_tot / n_comparisons, neg_loss_tot / n_comparisons
+        # return pos_loss_tot / n_comparisons, neg_loss_tot / n_comparisons
+        return pos_loss_tot / n_positives, neg_loss_tot / n_negatives
 
 
 # class CombinedLoss(nn.Module):
