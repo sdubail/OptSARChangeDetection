@@ -640,7 +640,7 @@ def infer_evaluate(
         help="Save visualization images",
     ),
     batch_size: int = typer.Option(
-        8, "--batch-size", "-b", help="Batch size for inference"
+        64, "--batch-size", "-b", help="Batch size for inference"
     ),
     num_workers: int = typer.Option(
         4, "--workers", "-w", help="Number of workers for data loading"
