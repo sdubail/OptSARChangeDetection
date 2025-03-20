@@ -178,6 +178,34 @@ def visualize_damage(damage_img):
 
     return rgb
 
+def dome_window(size, power=2):
+    """
+    Generates a 2D dome window (maximum at center, exactly zero at corners).
+
+    Args:
+        size (tuple): (height, width) of the window.
+        power (float): Controls the curvature of the dome (2 = parabolic, larger = sharper).
+
+    Returns:
+        window (ndarray): 2D window with values in [0,1], zero at corners.
+    """
+    height, width = size
+
+    # Normalized grid: x and y in [-1, 1]
+    y = np.linspace(-1, 1, height)
+    x = np.linspace(-1, 1, width)
+    xx, yy = np.meshgrid(x, y)
+
+    # Compute distance to corners (max distance = sqrt(2))
+    radius = np.sqrt(xx**2 + yy**2) / np.sqrt(2)  # Normalize so that corners have radius = 1
+
+    # Dome function: maximum at center, zero at corners
+    window = 1 - (radius ** power)
+
+    # Ensure no negative values
+    window = np.clip(window, 0, None)
+
+    return window
 
 def create_change_map(
     model: torch.nn.Module,
@@ -185,8 +213,10 @@ def create_change_map(
     post_img: np.ndarray,
     config: dict,
     device: str = "cuda",
-    batch_size: int = 8,
+    batch_size: int = 64,
     num_workers: int = 4,
+    window_method: str = "classic", # classic or dome
+    window_power: float = 2,
 ) -> np.ndarray:
     """
     Create a change map from pre-event optical and post-event SAR images.
@@ -267,9 +297,12 @@ def create_change_map(
                 # For each patch's ROI, add the change score
                 roi_y_end = y + roi_patch_size
                 roi_x_end = x + roi_patch_size
-
-                change_map[y:roi_y_end, x:roi_x_end] += score
-                count_map[y:roi_y_end, x:roi_x_end] += 1
+                
+                # define window importance
+                window = 1 if window_method == "classic" else dome_window((roi_patch_size, roi_patch_size), power=window_power)
+                
+                change_map[y:roi_y_end, x:roi_x_end] += score * window
+                count_map[y:roi_y_end, x:roi_x_end] += window
 
     # Average overlapping regions
     change_map = np.divide(
