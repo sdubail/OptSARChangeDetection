@@ -341,10 +341,16 @@ def infer_predict(
         help="Device to run inference on",
     ),
     batch_size: int = typer.Option(
-        8, "--batch-size", "-b", help="Batch size for inference"
+        64, "--batch-size", "-b", help="Batch size for inference"
     ),
     num_workers: int = typer.Option(
         4, "--workers", "-w", help="Number of workers for data loading"
+    ),
+    window_method: str = typer.Option(
+        'classic', "--window_method", "-w_met", help="Window method for inference"
+    ),
+    window_power: float = typer.Option(
+        2.0, "--window_power", "-w_pow", help="Window power for inference"
     ),
 ):
     """
@@ -442,6 +448,8 @@ def infer_predict(
         device=device,
         batch_size=batch_size,
         num_workers=num_workers,
+        window_method=window_method,
+        window_power=window_power,
     )
 
     # Define 5 thresholds to evaluate
@@ -637,6 +645,12 @@ def infer_evaluate(
     num_workers: int = typer.Option(
         4, "--workers", "-w", help="Number of workers for data loading"
     ),
+    window_method: str = typer.Option(
+        'classic', "--window_method", "-w_met", help="Window method for inference"
+    ),
+    window_power: float = typer.Option(
+        2.0, "--window_power", "-w_pow", help="Window power for inference"
+    ),
 ):
     """
     Evaluate a trained multimodal change detection model.
@@ -790,6 +804,8 @@ def infer_evaluate(
                     device=device,
                     batch_size=batch_size,
                     num_workers=num_workers,
+                    window_method=window_method,
+                    window_power=window_power
                 )
                 change_maps.append(change_map)
                 progress.update(task, advance=1)
@@ -914,6 +930,8 @@ def infer_evaluate(
                 device=device,
                 batch_size=batch_size,
                 num_workers=num_workers,
+                window_method=window_method,
+                window_power=window_power
             )
 
             # Compute metrics
