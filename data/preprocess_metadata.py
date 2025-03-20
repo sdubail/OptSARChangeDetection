@@ -29,6 +29,7 @@ class SimpleDatasetLoader:
         split="train",
         limit=None,
         exclude_blacklist=True,
+        select_disaster="",
     ):
         """
         Args:
@@ -46,8 +47,8 @@ class SimpleDatasetLoader:
         self.image_ids = [
             f.name.replace("_post_disaster.tif", "")
             for f in post_event_dir.glob("*_post_disaster.tif")
-            if not exclude_blacklist
-            or f.name.replace("_post_disaster.tif", "") not in blacklist
+            if (not exclude_blacklist
+            or f.name.replace("_post_disaster.tif", "") not in blacklist) and select_disaster in f.name
         ][:limit]
         logger.info(f"Found {len(self.image_ids)} images for {split} split")
 
@@ -381,6 +382,10 @@ def main():
         action="store_true",
         help="Include the images present in the blacklist",
     )
+    parser.add_argument(
+        "--select_disaster",
+        type=str, default="", help="Select a scene / disaster",
+    )
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
@@ -402,6 +407,7 @@ def main():
         split="train",
         limit=args.limit,
         exclude_blacklist=not args.include_blacklist,
+        select_disaster=args.select_disaster,
     )
 
     # Initialize lists to collect all metadata
