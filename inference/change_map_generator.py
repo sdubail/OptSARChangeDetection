@@ -265,7 +265,7 @@ def create_change_map(
     # Create an accumulation map for change scores and a count map for averaging
     height, width = pre_img.shape[:2]
     change_map = np.zeros((height, width), dtype=np.float32)
-    count_map = np.zeros((height, width), dtype=np.int32)
+    count_map = np.zeros((height, width), dtype=np.int32 if window_method == "classic" else np.float32)
 
     # Process patches in batches
     with torch.no_grad():
