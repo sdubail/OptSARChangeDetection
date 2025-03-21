@@ -185,7 +185,7 @@ def create_change_map(
     post_img: np.ndarray,
     config: dict,
     device: str = "cuda",
-    batch_size: int = 8,
+    batch_size: int = 32,
     num_workers: int = 4,
 ) -> np.ndarray:
     """
