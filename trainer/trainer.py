@@ -185,7 +185,7 @@ class ContrastiveTrainer:
                 pos_loss, neg_loss = self.criterion(
                     outputs["pre_projected"], outputs["post_projected"], is_positive
                 )
-                loss = pos_loss + neg_loss  # CAREFUL
+                loss = pos_loss  # + neg_loss  # CAREFUL
                 # Backward and optimize
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -261,7 +261,7 @@ class ContrastiveTrainer:
                     )
 
                     # Update statistics
-                    loss = pos_loss + neg_loss
+                    loss = pos_loss  # + neg_loss # CAREFUL
                     epoch_loss += loss.item()
 
                     # Collect predictions for evaluation
