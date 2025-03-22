@@ -1,9 +1,11 @@
+import json
 from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
+import sklearn.metrics
 import torch
 import torch.optim as optim
 import typer
@@ -14,7 +16,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 from rich.table import Table
+from rich.text import Text
 from rich.traceback import install
+from sklearn.metrics import balanced_accuracy_score, confusion_matrix
 from torch.utils.data import DataLoader
 
 from data.dataset_patches import PreprocessedPatchDataset
@@ -347,7 +351,7 @@ def infer_predict(
         4, "--workers", "-w", help="Number of workers for data loading"
     ),
     window_method: str = typer.Option(
-        'classic', "--window_method", "-w_met", help="Window method for inference"
+        "classic", "--window_method", "-w_met", help="Window method for inference"
     ),
     window_power: float = typer.Option(
         2.0, "--window_power", "-w_pow", help="Window power for inference"
@@ -593,6 +597,473 @@ def infer_predict(
     console.print(results_table)
 
 
+@infer_app.command("threshold")
+def infer_threshold(
+    model_path: Path = typer.Option(
+        ..., "--model", "-m", help="Path to the trained model checkpoint", exists=True
+    ),
+    config: Path = typer.Option(
+        "configs/default.yaml",
+        "--config",
+        "-c",
+        help="Path to configuration file",
+        exists=True,
+    ),
+    metadata_dir: Path = typer.Option(
+        "data/metadata_noblacklist", help="Directory containing patch metadata"
+    ),
+    output_dir: Path = typer.Option(
+        "output/threshold_analysis",
+        "--output",
+        "-o",
+        help="Directory to save analysis results",
+    ),
+    image_cache_size: int = typer.Option(
+        50, help="Number of full images to cache in memory"
+    ),
+    target_neg_ratio: float = typer.Option(
+        0.8, min=0.0, max=1.0, help="Target negative pair ratio in validation dataset"
+    ),
+    batch_size: int = typer.Option(
+        64, "--batch-size", "-b", help="Batch size for inference"
+    ),
+    device: str = typer.Option(
+        "cuda" if torch.cuda.is_available() else "cpu",
+        "--device",
+        help="Device to run inference on",
+    ),
+    subset_fraction: float = typer.Option(
+        1.0, min=0.0, max=1.0, help="Fraction of validation dataset to use"
+    ),
+    subset_seed: int = typer.Option(42, help="Random seed for subset selection"),
+):
+    """
+    Analyze model performance across different thresholds on the validation dataset.
+
+    This command:
+    1. Loads a trained model and validation dataset
+    2. Computes optical and SAR features for the entire validation set
+    3. Calculates change scores for all sample pairs
+    4. Evaluates performance metrics (accuracy, precision, recall, F1) at different thresholds
+    5. Generates ROC curves and finds optimal thresholds
+    6. Saves all results to the specified output directory
+    """
+    # Print header
+    console.print(
+        Panel("[bold green]OptSARChangeDetection - Threshold Analysis[/bold green]")
+    )
+
+    # Load configuration
+    with console.status("[bold green]Loading configuration...") as status:
+        with open(config, "r") as f:
+            config_data = yaml.safe_load(f)
+
+        # Create output directory
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save configuration for reference
+        with open(output_dir / "config.yaml", "w") as f:
+            yaml.dump(config_data, f)
+
+        # Set device
+        console.print(f"Using device: [bold]{device}[/bold]")
+
+        # Load validation dataset
+        status.update("[bold green]Loading validation dataset...")
+
+        val_dataset = OnTheFlyPatchDataset(
+            root_dir=config_data["data"]["root_dir"],
+            metadata_dir=metadata_dir,
+            split="val",
+            transform=None,  # No transforms for validation
+            cache_size=image_cache_size,
+            subset_fraction=subset_fraction,
+            target_neg_ratio=target_neg_ratio,
+            seed=subset_seed,
+        )
+
+        # Display dataset info
+        console.print(
+            f"Loaded validation dataset with [bold]{len(val_dataset)}[/bold] samples"
+        )
+        console.print(
+            f"Positive ratio: [bold]{val_dataset.get_pos_neg_ratio():.4f}[/bold]"
+        )
+
+        # Create validation sampler and dataloader
+        val_sampler = RatioSampler(
+            val_dataset,
+            batch_size=batch_size,
+            neg_ratio=target_neg_ratio,
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            sampler=val_sampler,
+            shuffle=False,
+            num_workers=config_data["data"]["num_workers"],
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
+        )
+
+        # Load model
+        status.update("[bold green]Loading model...")
+
+        # Create model with configuration
+        model = MultimodalDamageNet(
+            resnet_version=config_data["model"]["resnet_version"],
+            freeze_resnet=config_data["model"]["freeze_resnet"],
+            optical_channels=config_data["model"]["optical_channels"],
+            sar_channels=config_data["model"]["sar_channels"],
+            projection_dim=config_data["model"]["projection_dim"],
+        )
+
+        # Load weights
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+        else:
+            model.load_state_dict(checkpoint)
+
+        model = model.to(device)
+        model.eval()
+
+    # Compute features and change scores
+    console.print("[bold]Computing features and change scores...[/bold]")
+
+    # Initialize storage for features, scores, and labels
+    optical_features = []
+    sar_features = []
+    change_scores = []
+    is_positive_labels = []
+
+    # Process validation set
+    with torch.no_grad():
+        with Progress(
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Processing validation samples", total=len(val_loader)
+            )
+
+            for batch in val_loader:
+                # Move data to device
+                pre_patches = batch["pre_patch"].to(device)
+                post_patches = batch["post_patch"].to(device)
+                is_positive = batch["is_positive"].to(device)
+
+                # Forward pass
+                outputs = model(optical=pre_patches, sar=post_patches)
+
+                # Store features and scores
+                optical_features.append(outputs["optical_features"].cpu().numpy())
+                sar_features.append(outputs["sar_features"].cpu().numpy())
+                optical_projected = outputs["optical_projected"].cpu().numpy()
+                sar_projected = outputs["sar_projected"].cpu().numpy()
+
+                # Calculate change scores
+                if "change_score" in outputs:
+                    # Use model's change score if available
+                    batch_scores = outputs["change_score"].cpu().numpy()
+                else:
+                    # Calculate manually from projections
+                    optical_norm = optical_projected / np.linalg.norm(
+                        optical_projected, axis=1, keepdims=True
+                    )
+                    sar_norm = sar_projected / np.linalg.norm(
+                        sar_projected, axis=1, keepdims=True
+                    )
+                    similarity = np.sum(optical_norm * sar_norm, axis=1)
+                    batch_scores = 1.0 - similarity
+
+                change_scores.append(batch_scores)
+                is_positive_labels.append(is_positive.cpu().numpy())
+
+                progress.update(task, advance=1)
+
+    # Concatenate results
+    optical_features = np.vstack(optical_features)
+    sar_features = np.vstack(sar_features)
+    change_scores = np.concatenate(change_scores)
+    is_positive_labels = np.concatenate(is_positive_labels).flatten()
+
+    # Save features and scores
+    np.save(output_dir / "optical_features.npy", optical_features)
+    np.save(output_dir / "sar_features.npy", sar_features)
+    np.save(output_dir / "change_scores.npy", change_scores)
+    np.save(output_dir / "is_positive_labels.npy", is_positive_labels)
+
+    console.print(
+        f"[green]Saved features and scores for [bold]{len(change_scores)}[/bold] samples[/green]"
+    )
+
+    # Analyze threshold values
+    console.print("[bold]Analyzing threshold values...[/bold]")
+
+    # Define threshold range
+    thresholds = np.arange(0, 2.1, 0.1)
+
+    # Initialize metrics storage
+    results = {
+        "threshold": thresholds.tolist(),
+        "accuracy": [],
+        "balanced_accuracy": [],
+        "precision": [],
+        "recall": [],
+        "f1_score": [],
+        "specificity": [],  # True negative rate for ROC curve
+        "tpr": [],  # True positive rate for ROC curve
+        "fpr": [],  # False positive rate for ROC curve
+    }
+
+    # Calculate metrics for each threshold
+    for threshold in thresholds:
+        # Create binary predictions
+        predictions = (change_scores >= threshold).astype(int)
+
+        # Calculate metrics
+        tn, fp, fn, tp = sklearn.metrics.confusion_matrix(
+            1 - is_positive_labels, predictions, labels=[0, 1]
+        ).ravel()
+
+        # Basic metrics
+        accuracy = (tp + tn) / (tp + tn + fp + fn)
+        balanced_accuracy = (
+            ((tp / (tp + fn)) + (tn / (tn + fp))) / 2
+            if (tp + fn) > 0 and (tn + fp) > 0
+            else 0
+        )
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0
+        )
+
+        # ROC curve metrics
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        tpr = recall  # True positive rate = recall
+        fpr = 1 - specificity  # False positive rate = 1 - specificity
+
+        # Store results
+        results["accuracy"].append(float(accuracy))
+        results["balanced_accuracy"].append(float(balanced_accuracy))
+        results["precision"].append(float(precision))
+        results["recall"].append(float(recall))
+        results["f1_score"].append(float(f1))
+        results["specificity"].append(float(specificity))
+        results["tpr"].append(float(tpr))
+        results["fpr"].append(float(fpr))
+
+    # Save results
+    with open(output_dir / "threshold_metrics.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    # Find optimal thresholds
+    best_accuracy_idx = np.argmax(results["accuracy"])
+    best_balanced_idx = np.argmax(results["balanced_accuracy"])
+    best_f1_idx = np.argmax(results["f1_score"])
+
+    # Compute AUC for ROC
+    auc = sklearn.metrics.auc(results["fpr"], results["tpr"])
+
+    # Print optimal thresholds
+    console.print("\n[bold cyan]Optimal thresholds:[/bold cyan]")
+    console.print(
+        f"  Best accuracy: {thresholds[best_accuracy_idx]:.3f} (Accuracy: {results['accuracy'][best_accuracy_idx]:.4f})"
+    )
+    console.print(
+        f"  Best balanced accuracy: {thresholds[best_balanced_idx]:.3f} (Balanced Accuracy: {results['balanced_accuracy'][best_balanced_idx]:.4f})"
+    )
+    console.print(
+        f"  Best F1 score: {thresholds[best_f1_idx]:.3f} (F1: {results['f1_score'][best_f1_idx]:.4f})"
+    )
+    console.print(f"  ROC AUC: {auc:.4f}")
+
+    # Create summary
+    summary = {
+        "best_accuracy_threshold": float(thresholds[best_accuracy_idx]),
+        "best_balanced_accuracy_threshold": float(thresholds[best_balanced_idx]),
+        "best_f1_threshold": float(thresholds[best_f1_idx]),
+        "best_accuracy": float(results["accuracy"][best_accuracy_idx]),
+        "best_balanced_accuracy": float(
+            results["balanced_accuracy"][best_balanced_idx]
+        ),
+        "best_f1": float(results["f1_score"][best_f1_idx]),
+        "auc": float(auc),
+        "num_samples": int(len(change_scores)),
+        "positive_ratio": float(np.mean(is_positive_labels)),
+    }
+
+    with open(output_dir / "summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
+
+    # Generate plots
+    console.print("[bold]Generating plots...[/bold]")
+
+    # Create a styled figure for the metrics
+    plt.figure(figsize=(12, 10))
+
+    # Plot accuracy metrics
+    plt.subplot(2, 2, 1)
+    plt.plot(
+        thresholds, results["accuracy"], label="Accuracy", marker="o", markersize=4
+    )
+    plt.plot(
+        thresholds,
+        results["balanced_accuracy"],
+        label="Balanced Accuracy",
+        marker="s",
+        markersize=4,
+    )
+    plt.axvline(
+        x=thresholds[best_balanced_idx], color="green", linestyle="--", alpha=0.7
+    )
+    plt.grid(True, alpha=0.3)
+    plt.xlabel("Threshold")
+    plt.ylabel("Accuracy")
+    plt.title("Accuracy Metrics")
+    plt.legend()
+
+    # Plot precision and recall
+    plt.subplot(2, 2, 2)
+    plt.plot(
+        thresholds, results["precision"], label="Precision", marker="o", markersize=4
+    )
+    plt.plot(thresholds, results["recall"], label="Recall", marker="s", markersize=4)
+    plt.plot(
+        thresholds, results["f1_score"], label="F1 Score", marker="^", markersize=4
+    )
+    plt.axvline(x=thresholds[best_f1_idx], color="red", linestyle="--", alpha=0.7)
+    plt.grid(True, alpha=0.3)
+    plt.xlabel("Threshold")
+    plt.ylabel("Score")
+    plt.title("Precision, Recall, and F1 Score")
+    plt.legend()
+
+    # Plot ROC curve
+    plt.subplot(2, 2, 3)
+    plt.plot(
+        results["fpr"],
+        results["tpr"],
+        label=f"ROC Curve (AUC = {auc:.4f})",
+        marker="o",
+        markersize=4,
+    )
+    plt.plot([0, 1], [0, 1], "k--", alpha=0.5)  # Diagonal line
+    plt.grid(True, alpha=0.3)
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve")
+    plt.legend()
+
+    # Plot histogram of change scores
+    plt.subplot(2, 2, 4)
+    plt.hist(
+        [
+            change_scores[is_positive_labels == 1],  # Positive samples
+            change_scores[is_positive_labels == 0],  # Negative samples
+        ],
+        bins=30,
+        alpha=0.7,
+        label=["Positive (no damage)", "Negative (damage)"],
+        color=["green", "red"],
+    )
+    plt.axvline(
+        x=thresholds[best_f1_idx],
+        color="black",
+        linestyle="--",
+        alpha=0.7,
+        label=f"Best F1 threshold: {thresholds[best_f1_idx]:.3f}",
+    )
+    plt.grid(True, alpha=0.3)
+    plt.xlabel("Change Score")
+    plt.ylabel("Count")
+    plt.title("Distribution of Change Scores")
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "threshold_analysis.png", dpi=300)
+    plt.close()
+
+    # Also create separate precision-recall curve
+    plt.figure(figsize=(10, 8))
+    plt.plot(results["recall"], results["precision"], marker="o", markersize=4)
+    plt.grid(True, alpha=0.3)
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curve")
+
+    # Mark best F1 point
+    best_recall = results["recall"][best_f1_idx]
+    best_precision = results["precision"][best_f1_idx]
+    plt.scatter(
+        [best_recall],
+        [best_precision],
+        color="red",
+        s=100,
+        zorder=5,
+        label=f"Best F1: {results['f1_score'][best_f1_idx]:.4f}",
+    )
+
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / "precision_recall_curve.png", dpi=300)
+    plt.close()
+
+    # Create table with threshold values
+    threshold_table = Table(title="Threshold Analysis Results")
+    threshold_table.add_column("Threshold", style="cyan", justify="center")
+    threshold_table.add_column("Accuracy", style="green", justify="center")
+    threshold_table.add_column("Balanced Acc", style="green", justify="center")
+    threshold_table.add_column("Precision", style="yellow", justify="center")
+    threshold_table.add_column("Recall", style="magenta", justify="center")
+    threshold_table.add_column("F1 Score", style="blue", justify="center")
+
+    for i, t in enumerate(thresholds):
+        threshold_table.add_row(
+            f"{t:.2f}",
+            f"{results['accuracy'][i]:.4f}",
+            f"{results['balanced_accuracy'][i]:.4f}",
+            f"{results['precision'][i]:.4f}",
+            f"{results['recall'][i]:.4f}",
+            f"{results['f1_score'][i]:.4f}",
+        )
+
+    console.print(threshold_table)
+
+    # Create results panel with optimal thresholds
+    result_panel = Panel(
+        f"""[bold green]Threshold Analysis Complete![/bold green]
+        
+[bold cyan]Optimal Thresholds:[/bold cyan]
+  Best accuracy: {thresholds[best_accuracy_idx]:.3f} (Accuracy: {results['accuracy'][best_accuracy_idx]:.4f})
+  Best balanced accuracy: {thresholds[best_balanced_idx]:.3f} (Balanced Accuracy: {results['balanced_accuracy'][best_balanced_idx]:.4f})
+  Best F1 score: {thresholds[best_f1_idx]:.3f} (F1: {results['f1_score'][best_f1_idx]:.4f})
+  ROC AUC: {auc:.4f}
+        
+[bold]Dataset Information:[/bold]
+  Total samples: {len(change_scores)}
+  Positive ratio: {np.mean(is_positive_labels):.4f}
+        
+[bold]Output Location:[/bold]
+  {output_dir}
+        """,
+        title="Threshold Analysis Results",
+        expand=False,
+    )
+
+    console.print(result_panel)
+
+
 @infer_app.command("evaluate")
 def infer_evaluate(
     model_path: Path = typer.Option(
@@ -646,7 +1117,7 @@ def infer_evaluate(
         4, "--workers", "-w", help="Number of workers for data loading"
     ),
     window_method: str = typer.Option(
-        'classic', "--window_method", "-w_met", help="Window method for inference"
+        "classic", "--window_method", "-w_met", help="Window method for inference"
     ),
     window_power: float = typer.Option(
         2.0, "--window_power", "-w_pow", help="Window power for inference"
@@ -805,7 +1276,7 @@ def infer_evaluate(
                     batch_size=batch_size,
                     num_workers=num_workers,
                     window_method=window_method,
-                    window_power=window_power
+                    window_power=window_power,
                 )
                 change_maps.append(change_map)
                 progress.update(task, advance=1)
@@ -931,7 +1402,7 @@ def infer_evaluate(
                 batch_size=batch_size,
                 num_workers=num_workers,
                 window_method=window_method,
-                window_power=window_power
+                window_power=window_power,
             )
 
             # Compute metrics
