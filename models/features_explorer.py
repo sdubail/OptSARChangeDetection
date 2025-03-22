@@ -4,6 +4,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from data.transforms import get_transform
 from data.dataset_patchonthefly import OnTheFlyPatchDataset
+from rich import print as rprintpip
 from rich.console import Console
 
 
@@ -789,6 +790,8 @@ class VisualizationApp:
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize model outputs")
+    parser.add_argument("--config", type=Path, default="configs/default.yaml", 
+                      help="Path to configuration file")
     parser.add_argument("--model_path", type=str, default="output/patch_contrastive/best_model.pth", 
                       help="Path to the saved model")
     parser.add_argument("--config_path", type=str, default="configs/default.yaml", 
@@ -821,7 +824,7 @@ def main():
 
     # Load configuration
     with console.status("[bold green]Loading configuration...") as status:
-        with open(config, "r") as f:
+        with open(args.config, "r") as f:
             config_data = yaml.safe_load(f)
     
     # Check if CUDA is available
@@ -850,7 +853,7 @@ def main():
     print(f"Model loaded from {args.model_path}")
              
     # Create dataset and dataloader
-    val_transform = get_transform("val") if use_transforms else None
+    val_transform = get_transform("val") if args.use_transform else None
     val_dataset = OnTheFlyPatchDataset(
         root_dir=config_data["data"]["root_dir"],
         metadata_dir=args.metadata_dir,
