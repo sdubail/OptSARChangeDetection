@@ -2,17 +2,16 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from data.transforms import get_transform
+from data.dataset_patchonthefly import OnTheFlyPatchDataset
+from rich.console import Console
 
 
 import argparse
-import json
 import os
 from pathlib import Path
 import numpy as np
-from PIL import Image, ImageTk
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from tkinter import (
     BOTH, BOTTOM, HORIZONTAL, LEFT, RIGHT, TOP, Button, Entry, Frame,
     Label, OptionMenu, Scale, StringVar, Tk, X, Y
@@ -37,6 +36,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib
 matplotlib.use("TkAgg")  # Use TkAgg backend
 
+console = Console()
 
 # Optional: Import UMAP if available
 try:
@@ -793,7 +793,7 @@ def main():
                       help="Path to the saved model")
     parser.add_argument("--config_path", type=str, default="configs/default.yaml", 
                       help="Path to the model config file")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for data loading")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for data loading")
     parser.add_argument("--output_dir", type=str, default="output/features_explorer", 
                       help="Directory to save output")
     parser.add_argument("--interactive", action="store_true", help="Launch interactive visualization")
@@ -803,15 +803,26 @@ def main():
     # Dataset parameters
     parser.add_argument("--patch_dir", type=str, default="data/processed_patches",
                     help="Directory containing processed patches")
+    parser.add_argument("--metadata_dir", type=str, default="data/metadata-noblacklist-turkey",
+                    help="Directory containing metadata")
     parser.add_argument("--split", type=str, default="val",
                     help="Dataset split to use (train/val/test)")
-    parser.add_argument("--cache_size", type=int, default=1000,
+    parser.add_argument("--cache_size", type=int, default=50,
                     help="Number of samples to cache in memory")
     parser.add_argument("--subset_fraction", type=float, default=0.1,
                     help="Fraction of the dataset to use (0.0-1.0)")
+    parser.add_argument("--target_neg_ratio", type=float, default=0.1,
+                    help="Negative sample ratio for sampling")
     parser.add_argument("--seed", type=int, default=42,
                     help="Random seed for dataset shuffling and sampling")
+    parser.add_argument("--use_transform", type=bool, default=False,
+                    help="Whether to apply data augmentation transforms")
     args = parser.parse_args()
+
+    # Load configuration
+    with console.status("[bold green]Loading configuration...") as status:
+        with open(config, "r") as f:
+            config_data = yaml.safe_load(f)
     
     # Check if CUDA is available
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -839,17 +850,18 @@ def main():
     print(f"Model loaded from {args.model_path}")
              
     # Create dataset and dataloader
-    val_transform = None  # Add transforms if needed
-    val_dataset = PreprocessedPatchDataset(
-        patch_dir=args.patch_dir,
-        split=args.split,
+    val_transform = get_transform("val") if use_transforms else None
+    val_dataset = OnTheFlyPatchDataset(
+        root_dir=config_data["data"]["root_dir"],
+        metadata_dir=args.metadata_dir,
+        split="val",
         transform=val_transform,
         cache_size=args.cache_size,
         subset_fraction=args.subset_fraction,
+        target_neg_ratio=args.target_neg_ratio,
         seed=args.seed,
     )
-    with open("configs/default.yaml", "r") as f:
-        config = yaml.safe_load(f)
+
 
     dataloader = DataLoader(
         val_dataset,
