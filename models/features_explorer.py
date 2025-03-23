@@ -182,9 +182,9 @@ class ModelVisualizer:
                 # Ensure is_positive_labels is flattened to 1D
                 is_positive_flat = self.is_positive_labels.flatten()
                 
-                # Create scatter plots by damage label (0=intact, 1=damaged)
-                intact_mask = is_positive_flat == 0
-                damaged_mask = is_positive_flat == 1
+                # Create scatter plots by damage label (1=intact, 0=damaged)
+                intact_mask = is_positive_flat == 1
+                damaged_mask = is_positive_flat == 0
                 
                 plt.scatter(
                     reduced_data[intact_mask, 0], 
@@ -460,7 +460,7 @@ def main():
                     help="Number of samples to cache in memory")
     parser.add_argument("--subset_fraction", type=float, default=0.1,
                     help="Fraction of the dataset to use (0.0-1.0)")
-    parser.add_argument("--target_neg_ratio", type=float, default=0.1,
+    parser.add_argument("--target_neg_ratio", type=float, default=None,
                     help="Negative sample ratio for sampling")
     parser.add_argument("--seed", type=int, default=42,
                     help="Random seed for dataset shuffling and sampling")
