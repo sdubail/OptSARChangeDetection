@@ -282,7 +282,9 @@ def visualize_damage(
 
                 # Assign the patch label (0 or 1) to all pixels in the ROI region
                 # This is where patches overlap and will be averaged
-                label_map[y : y + roi_patch_size, x : x + roi_patch_size] += is_positive
+                label_map[y : y + roi_patch_size, x : x + roi_patch_size] += (
+                    1 - is_positive
+                )
                 count_map[y : y + roi_patch_size, x : x + roi_patch_size] += 1
 
         # Average overlapping regions
