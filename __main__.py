@@ -491,7 +491,7 @@ def infer_predict(
     console.print("[bold]Creating visualizations...[/bold]")
 
     # Create a figure with subplots
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig, axes = plt.subplots(2, 4, figsize=(18, 12))
 
     # Create a custom colormap (blue to red)
     colors = [(0, 0, 1), (1, 1, 1), (1, 0, 0)]  # Blue -> White -> Red
