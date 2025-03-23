@@ -500,7 +500,7 @@ def infer_predict(
     # Continuous change map (top-left)
     im = axes[0, 0].imshow(change_map, cmap=cmap, vmin=0, vmax=2)
     axes[0, 0].set_title("Change Intensity")
-    fig.colorbar(im, ax=axes[0, 0])
+    fig.colorbar(im, ax=axes[0, 0], fraction=0.046, pad=0.04)
     axes[0, 0].axis("off")
 
     # Ground truth - our labels
