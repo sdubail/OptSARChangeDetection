@@ -215,8 +215,8 @@ def create_change_map(
     device: str = "cuda",
     batch_size: int = 64,
     num_workers: int = 4,
-    window_method: str = "classic", # classic or dome
-    window_power: float = 2,
+    window_method: str = "dome", # classic or dome
+    window_power: float = 1.5,
 ) -> np.ndarray:
     """
     Create a change map from pre-event optical and post-event SAR images.
