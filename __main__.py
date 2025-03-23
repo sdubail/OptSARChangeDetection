@@ -28,6 +28,7 @@ from data.transforms import get_transform
 from inference.change_map_generator import (
     compute_iou,
     create_change_map,
+    set_border_to_zero,
     visualize_change_map,
     visualize_damage,
 )
@@ -347,6 +348,12 @@ def infer_predict(
     batch_size: int = typer.Option(
         64, "--batch-size", "-b", help="Batch size for inference"
     ),
+    context_patch_size: int = typer.Option(
+        256, "--context_patch-size", "-b", help="context_patch size for inference"
+    ),
+    roi_patch_size: int = typer.Option(
+        16, "--roi_patch-size", "-b", help="roi_patch size for inference"
+    ),
     num_workers: int = typer.Option(
         4, "--workers", "-w", help="Number of workers for data loading"
     ),
@@ -462,8 +469,14 @@ def infer_predict(
     # Compute metrics for each threshold
     results = []
     label_binary = np.where(label > 1, 1, 0)
+    pad_size = (context_patch_size - roi_patch_size) // 2
+    change_map_padded = set_border_to_zero(change_map, pad_size)
+    label_binary_padded = set_border_to_zero(label_binary, pad_size)
+
     for thresh in thresholds:
-        iou, precision, recall = compute_iou(change_map, label_binary, threshold=thresh)
+        iou, precision, recall = compute_iou(
+            change_map_padded, label_binary_padded, threshold=thresh
+        )
         f1 = (
             2 * precision * recall / (precision + recall)
             if (precision + recall) > 0
@@ -483,28 +496,34 @@ def infer_predict(
     console.print("[bold]Creating visualizations...[/bold]")
 
     # Create a figure with subplots
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig, axes = plt.subplots(2, 4, figsize=(18, 12))
 
     # Create a custom colormap (blue to red)
     colors = [(0, 0, 1), (1, 1, 1), (1, 0, 0)]  # Blue -> White -> Red
     cmap = LinearSegmentedColormap.from_list("change_cmap", colors, N=256)
 
     # Continuous change map (top-left)
-    im = axes[0, 0].imshow(change_map, cmap=cmap, vmin=0, vmax=1)
+    im = axes[0, 0].imshow(change_map, cmap=cmap, vmin=0, vmax=2)
     axes[0, 0].set_title("Change Intensity")
-    fig.colorbar(im, ax=axes[0, 0])
+    fig.colorbar(im, ax=axes[0, 0], fraction=0.046, pad=0.04)
     axes[0, 0].axis("off")
 
-    # Ground truth (top-middle)
-    axes[0, 1].imshow(visualize_damage(label))
-    axes[0, 1].set_title("Ground Truth")
+    # Ground truth - our labels
+    axes[0, 1].imshow(visualize_damage(label, is_patch=True))
+    axes[0, 1].set_title("Ground Truth - patch based")
     axes[0, 1].axis("off")
 
-    # Empty plot for balance (top-right)
+    # Ground truth dataset (top-middle)
+    label_padded = set_border_to_zero(label, pad_size)
+    axes[0, 2].imshow(visualize_damage(label_padded))
+    axes[0, 2].set_title("Ground Truth - original")
     axes[0, 2].axis("off")
 
+    # Empty plot for balance (top-right)
+    axes[0, 3].axis("off")
+
     # Create a table with metrics
-    metrics_table = axes[0, 2].table(
+    metrics_table = axes[0, 3].table(
         cellText=[
             [
                 f"{r['threshold']:.2f}",
@@ -523,7 +542,7 @@ def infer_predict(
     axes[0, 2].set_title("Metrics by Threshold")
 
     # Binary change maps for different thresholds (bottom row)
-    for i, thresh in enumerate(thresholds[:3]):
+    for i, thresh in enumerate(thresholds[:4]):
         binary_map = (change_map > thresh).astype(np.uint8)
         result = results[i]
         axes[1, i].imshow(binary_map, cmap="gray")

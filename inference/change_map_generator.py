@@ -153,30 +153,160 @@ class PatchDataset(Dataset):
         return img
 
 
-def visualize_damage(damage_img):
-    """Create a color visualization of damage levels."""
-    # Define colors for damage levels (0 to 4)
-    colors = np.array(
-        [
-            [0, 0, 0],  # 0: No damage (black)
-            [0, 255, 0],  # 1: Minor damage (green)
-            [255, 255, 0],  # 2: Moderate damage (yellow)
-            [255, 127, 0],  # 3: Major damage (orange)
-            [255, 0, 0],  # 4: Destroyed (red)
-        ]
-    )
+def set_border_to_zero(array, border_width):
+    """
+    Set the border of an array to zero without changing its dimensions.
 
-    # Create RGB image
-    h, w = damage_img.shape
-    rgb = np.zeros((h, w, 3), dtype=np.uint8)
+    Args:
+        array: Input numpy array
+        border_width: Width of the border to set to zero
 
-    # Fill with colors based on damage values
-    for i in range(5):  # 5 damage levels
-        mask = damage_img == i
-        if np.any(mask):
-            rgb[mask] = colors[i]
+    Returns:
+        Modified array with borders set to zero
+    """
+    # Make a copy to avoid modifying the original array
+    result = array.copy()
+
+    # Get array dimensions
+    if array.ndim == 2:
+        h, w = array.shape
+
+        # Set top and bottom borders to zero
+        result[:border_width, :] = 0
+        result[h - border_width :, :] = 0
+
+        # Set left and right borders to zero
+        result[:, :border_width] = 0
+        result[:, w - border_width :] = 0
+
+    elif array.ndim == 3:
+        h, w, c = array.shape
+
+        # Set top and bottom borders to zero
+        result[:border_width, :, :] = 0
+        result[h - border_width :, :, :] = 0
+
+        # Set left and right borders to zero
+        result[:, :border_width, :] = 0
+        result[:, w - border_width :, :] = 0
+
+    else:
+        raise ValueError(f"Unsupported array dimensionality: {array.ndim}")
+
+    return result
+
+
+def visualize_damage(
+    damage_img,
+    is_patch=False,
+    roi_patch_size=16,
+    context_patch_size=256,
+    stride=8,
+    pos_threshold=0.05,
+):
+    """
+    Create a color visualization of damage levels or patch-level contrastive labels.
+
+    Args:
+        damage_img: Input damage image or binary label
+        is_patch: If True, visualize patch-level contrastive training labels
+        roi_patch_size: Size of the region of interest for patches
+        pad_size: Padding size around the ROI
+        stride: Stride for patch extraction
+        pos_threshold: Threshold for positive/negative classification
+
+    Returns:
+        RGB visualization image
+    """
+    if not is_patch:
+        # Standard damage level visualization (original function)
+        # Define colors for damage levels (0 to 4)
+        colors = np.array(
+            [
+                [0, 0, 0],  # 0: No damage (black)
+                [0, 255, 0],  # 1: Minor damage (green)
+                [255, 255, 0],  # 2: Moderate damage (yellow)
+                [255, 127, 0],  # 3: Major damage (orange)
+                [255, 0, 0],  # 4: Destroyed (red)
+            ]
+        )
+
+        # Create RGB image
+        h, w = damage_img.shape
+        rgb = np.zeros((h, w, 3), dtype=np.uint8)
+
+        # Fill with colors based on damage values
+        for i in range(5):  # 5 damage levels
+            mask = damage_img == i
+            if np.any(mask):
+                rgb[mask] = colors[i]
+    else:
+        # Patch-level contrastive label visualization
+        h, w = damage_img.shape
+        pad_size = (context_patch_size - roi_patch_size) // 2
+        # Create accumulation map for patch labels and count map for averaging
+        label_map = np.zeros((h, w), dtype=np.float32)
+        count_map = np.zeros((h, w), dtype=np.int32)
+
+        # Create binary version of the damage map (any damage > 0)
+        label_binary = np.where(damage_img > 1, 1, 0)
+
+        # Calculate valid extraction region
+        start_y = pad_size
+        start_x = pad_size
+        end_y = h - pad_size - roi_patch_size + 1
+        end_x = w - pad_size - roi_patch_size + 1
+
+        if start_y >= end_y or start_x >= end_x:
+            # Image too small for extraction
+            # Return a red "error" image
+            rgb = np.zeros((h, w, 3), dtype=np.uint8)
+            rgb[:, :, 0] = 255  # Red channel
+            return rgb
+
+        # Process each potential patch
+        for y in range(start_y, end_y, stride):
+            for x in range(start_x, end_x, stride):
+                # Extract ROI from the binary label
+                roi = label_binary[y : y + roi_patch_size, x : x + roi_patch_size]
+
+                # Calculate damage ratio in this ROI
+                damage_pixels = np.sum(roi > 0)
+                total_valid_pixels = roi.size - np.sum(np.isnan(roi))
+
+                if total_valid_pixels == 0:
+                    continue
+
+                damage_ratio = damage_pixels / total_valid_pixels
+                is_positive = int(damage_ratio <= pos_threshold)
+
+                # Assign the patch label (0 or 1) to all pixels in the ROI region
+                # This is where patches overlap and will be averaged
+                label_map[y : y + roi_patch_size, x : x + roi_patch_size] += (
+                    1 - is_positive
+                )
+                count_map[y : y + roi_patch_size, x : x + roi_patch_size] += 1
+
+        # Average overlapping regions
+        # Avoid division by zero with np.divide
+        label_map = np.divide(
+            label_map, count_map, out=np.zeros_like(label_map), where=count_map > 0
+        )
+
+        # Create RGB visualization (grayscale)
+        # 0 (negative/damaged) = black, 1 (positive/intact) = white
+        rgb = np.zeros((h, w, 3), dtype=np.uint8)
+
+        # Scale to [0, 255] for visualization
+        grayscale = (label_map * 255).astype(np.uint8)
+
+        # Copy to all channels for grayscale RGB
+        rgb[:, :, 0] = grayscale
+        rgb[:, :, 1] = grayscale
+        rgb[:, :, 2] = grayscale
 
     return rgb
+
 
 def dome_window(size, power=2):
     """
@@ -197,15 +327,18 @@ def dome_window(size, power=2):
     xx, yy = np.meshgrid(x, y)
 
     # Compute distance to corners (max distance = sqrt(2))
-    radius = np.sqrt(xx**2 + yy**2) / np.sqrt(2)  # Normalize so that corners have radius = 1
+    radius = np.sqrt(xx**2 + yy**2) / np.sqrt(
+        2
+    )  # Normalize so that corners have radius = 1
 
     # Dome function: maximum at center, zero at corners
-    window = 1 - (radius ** power)
+    window = 1 - (radius**power)
 
     # Ensure no negative values
     window = np.clip(window, 0, None)
 
     return window
+
 
 def create_change_map(
     model: torch.nn.Module,
@@ -265,7 +398,9 @@ def create_change_map(
     # Create an accumulation map for change scores and a count map for averaging
     height, width = pre_img.shape[:2]
     change_map = np.zeros((height, width), dtype=np.float32)
-    count_map = np.zeros((height, width), dtype=np.int32 if window_method == "classic" else np.float32)
+    count_map = np.zeros(
+        (height, width), dtype=np.int32 if window_method == "classic" else np.float32
+    )
 
     # Process patches in batches
     with torch.no_grad():
@@ -297,10 +432,16 @@ def create_change_map(
                 # For each patch's ROI, add the change score
                 roi_y_end = y + roi_patch_size
                 roi_x_end = x + roi_patch_size
-                
+
                 # define window importance
-                window = 1 if window_method == "classic" else dome_window((roi_patch_size, roi_patch_size), power=window_power)
-                
+                window = (
+                    1
+                    if window_method == "classic"
+                    else dome_window(
+                        (roi_patch_size, roi_patch_size), power=window_power
+                    )
+                )
+
                 change_map[y:roi_y_end, x:roi_x_end] += score * window
                 count_map[y:roi_y_end, x:roi_x_end] += window
 
