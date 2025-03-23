@@ -271,8 +271,8 @@ class ModelVisualizer:
                 
                 # Separate data by modality and damage status
                 optical_indices = np.where(modality_labels == 0)[0]
-                sar_intact_indices = np.where((modality_labels == 1) & (damage_labels == 0))[0]
-                sar_damaged_indices = np.where((modality_labels == 1) & (damage_labels == 1))[0]
+                sar_intact_indices = np.where((modality_labels == 1) & (damage_labels == 1))[0]
+                sar_damaged_indices = np.where((modality_labels == 1) & (damage_labels == 0))[0]
                 
                 # Plot each group with different markers and colors
                 plt.scatter(
@@ -331,106 +331,106 @@ class ModelVisualizer:
                 else:
                     plt.show()
                 
-                # 2. Still create the original modality-only plot
-                plt.figure(figsize=(10, 8))
+                # # 2. Still create the original modality-only plot
+                # plt.figure(figsize=(10, 8))
                 
-                # Plot by modality (optical vs SAR)
-                plt.scatter(
-                    reduced_data[optical_indices, 0],
-                    reduced_data[optical_indices, 1],
-                    marker='^',
-                    color='blue',
-                    alpha=0.7,
-                    label='Optical'
-                )
+                # # Plot by modality (optical vs SAR)
+                # plt.scatter(
+                #     reduced_data[optical_indices, 0],
+                #     reduced_data[optical_indices, 1],
+                #     marker='^',
+                #     color='blue',
+                #     alpha=0.7,
+                #     label='Optical'
+                # )
                 
-                plt.scatter(
-                    reduced_data[np.where(modality_labels == 1)[0], 0],
-                    reduced_data[np.where(modality_labels == 1)[0], 1],
-                    marker='o',
-                    color='red',
-                    alpha=0.7,
-                    label='SAR'
-                )
+                # plt.scatter(
+                #     reduced_data[np.where(modality_labels == 1)[0], 0],
+                #     reduced_data[np.where(modality_labels == 1)[0], 1],
+                #     marker='o',
+                #     color='red',
+                #     alpha=0.7,
+                #     label='SAR'
+                # )
                 
-                plt.legend(loc='best')
-                plt.title(f'Projection Space by Modality - {method.upper()}')
-                plt.xlabel(f'{method.upper()} Component 1')
-                plt.ylabel(f'{method.upper()} Component 2')
+                # plt.legend(loc='best')
+                # plt.title(f'Projection Space by Modality - {method.upper()}')
+                # plt.xlabel(f'{method.upper()} Component 1')
+                # plt.ylabel(f'{method.upper()} Component 2')
                 
-                # Add point labels only if requested
-                if show_labels:
-                    for i, (x, y) in enumerate(reduced_data):
-                        if i < n_optical:
-                            label = f"{i}O"  # Optical
-                        else:
-                            label = f"{i-n_optical}S"  # SAR
+                # # Add point labels only if requested
+                # if show_labels:
+                #     for i, (x, y) in enumerate(reduced_data):
+                #         if i < n_optical:
+                #             label = f"{i}O"  # Optical
+                #         else:
+                #             label = f"{i-n_optical}S"  # SAR
                             
-                        plt.annotate(
-                            label,
-                            (x, y),
-                            textcoords="offset points",
-                            xytext=(0, 5),
-                            ha='center',
-                            fontsize=8
-                        )
+                #         plt.annotate(
+                #             label,
+                #             (x, y),
+                #             textcoords="offset points",
+                #             xytext=(0, 5),
+                #             ha='center',
+                #             fontsize=8
+                #         )
                 
-                if save_to_file:
-                    plt.savefig(self.output_dir / f'projection_space_modality_{method}.png', dpi=300, bbox_inches='tight')
-                    plt.close()
-                else:
-                    plt.show()
+                # if save_to_file:
+                #     plt.savefig(self.output_dir / f'projection_space_modality_{method}.png', dpi=300, bbox_inches='tight')
+                #     plt.close()
+                # else:
+                #     plt.show()
                 
-                # 3. Still create the original damage-only plot
-                plt.figure(figsize=(10, 8))
+                # # 3. Still create the original damage-only plot
+                # plt.figure(figsize=(10, 8))
                 
-                # Plot by damage status (intact vs damaged)
-                intact_indices = np.where(damage_labels == 0)[0]
-                damaged_indices = np.where(damage_labels == 1)[0]
+                # # Plot by damage status (intact vs damaged)
+                # intact_indices = np.where(damage_labels == 0)[0]
+                # damaged_indices = np.where(damage_labels == 1)[0]
                 
-                plt.scatter(
-                    reduced_data[intact_indices, 0],
-                    reduced_data[intact_indices, 1],
-                    color='green',
-                    alpha=0.7,
-                    label='Intact'
-                )
+                # plt.scatter(
+                #     reduced_data[intact_indices, 0],
+                #     reduced_data[intact_indices, 1],
+                #     color='green',
+                #     alpha=0.7,
+                #     label='Intact'
+                # )
                 
-                plt.scatter(
-                    reduced_data[damaged_indices, 0],
-                    reduced_data[damaged_indices, 1],
-                    color='red',
-                    alpha=0.7,
-                    label='Damaged'
-                )
+                # plt.scatter(
+                #     reduced_data[damaged_indices, 0],
+                #     reduced_data[damaged_indices, 1],
+                #     color='red',
+                #     alpha=0.7,
+                #     label='Damaged'
+                # )
                 
-                plt.legend(loc='best')
-                plt.title(f'Projection Space by Damage - {method.upper()}')
-                plt.xlabel(f'{method.upper()} Component 1')
-                plt.ylabel(f'{method.upper()} Component 2')
+                # plt.legend(loc='best')
+                # plt.title(f'Projection Space by Damage - {method.upper()}')
+                # plt.xlabel(f'{method.upper()} Component 1')
+                # plt.ylabel(f'{method.upper()} Component 2')
                 
-                # Add point labels only if requested
-                if show_labels:
-                    for i, (x, y) in enumerate(reduced_data):
-                        if i < n_optical:
-                            label = f"{i}O"  # Optical
-                        else:
-                            label = f"{i-n_optical}S"  # SAR
+                # # Add point labels only if requested
+                # if show_labels:
+                #     for i, (x, y) in enumerate(reduced_data):
+                #         if i < n_optical:
+                #             label = f"{i}O"  # Optical
+                #         else:
+                #             label = f"{i-n_optical}S"  # SAR
                             
-                        plt.annotate(
-                            label,
-                            (x, y),
-                            textcoords="offset points",
-                            xytext=(0, 5),
-                            ha='center',
-                            fontsize=8
-                        )
+                #         plt.annotate(
+                #             label,
+                #             (x, y),
+                #             textcoords="offset points",
+                #             xytext=(0, 5),
+                #             ha='center',
+                #             fontsize=8
+                #         )
                 
-                if save_to_file:
-                    plt.savefig(self.output_dir / f'projection_space_damage_{method}.png', dpi=300, bbox_inches='tight')
-                    plt.close()
-                else:
-                    plt.show()
+                # if save_to_file:
+                #     plt.savefig(self.output_dir / f'projection_space_damage_{method}.png', dpi=300, bbox_inches='tight')
+                #     plt.close()
+                # else:
+                #     plt.show()
             except Exception as e:
                 print(f"Error creating {method.upper()} visualization: {e}")
 
