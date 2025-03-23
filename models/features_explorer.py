@@ -69,12 +69,10 @@ class ModelVisualizer:
         self.is_positive_labels = []
         self.normalize = normalize
         
-    def collect_features(self, max_batches=None):
+    def collect_features(self):
         """
         Collect features from the model for visualization.
-        
-        Args:
-            max_batches: Maximum number of batches to process (None for all)
+
         """
         self.model.eval()
         batch_count = 0
@@ -100,8 +98,7 @@ class ModelVisualizer:
                 self.is_positive_labels.append(is_positive.cpu().numpy())
                 
                 batch_count += 1
-                if max_batches is not None and batch_count >= max_batches:
-                    break
+
         
         # Concatenate all batches
         self.sar_features = np.concatenate(self.sar_features)
@@ -443,11 +440,9 @@ def main():
                       help="Path to the saved model")
     parser.add_argument("--config_path", type=str, default="configs/default.yaml", 
                       help="Path to the model config file")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for data loading")
     parser.add_argument("--output_dir", type=str, default="output/features_explorer", 
                       help="Directory to save output")
     parser.add_argument("--device", type=str, default="cpu", help="Device to run on (cuda/cpu)")
-    parser.add_argument("--max_batches", type=int, default=10, help="Maximum number of batches to process")
     parser.add_argument("--show_labels", action="store_true", help="Show point labels in static visualizations")
     # Dataset parameters
     parser.add_argument("--patch_dir", type=str, default="data/processed_patches",
@@ -536,7 +531,7 @@ def main():
         output_dir=args.output_dir,
         normalize=args.normalize
     )
-    visualizer.collect_features(max_batches=args.max_batches)
+    visualizer.collect_features()
     visualizer.create_visualizations(save_to_file=True, show_labels=args.show_labels)
     print(f"Visualizations saved to {args.output_dir}")
 
