@@ -140,9 +140,6 @@ def train_start(
             target_neg_ratio=target_neg_ratio,
             seed=subset_seed,
         )
-        import pdb
-
-        pdb.set_trace()
 
         # Display dataset info
         dataset_table = Table(title="Dataset Information")
