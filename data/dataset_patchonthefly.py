@@ -55,6 +55,7 @@ class OnTheFlyPatchDataset(Dataset):
         self.is_positive = np.load(self.metadata_dir / f"{split}_is_positive.npy")
         self.damage_ratios = np.load(self.metadata_dir / f"{split}_damage_ratios.npy")
 
+        self.has_building = np.load(self.metadata_dir / f"{split}_has_building.npy")
         # Load positive and negative indices separately
         positive_indices = np.load(self.metadata_dir / f"{split}_positive_indices.npy")
         negative_indices = np.load(self.metadata_dir / f"{split}_negative_indices.npy")
@@ -186,6 +187,8 @@ class OnTheFlyPatchDataset(Dataset):
         pre_patch = self._to_tensor_optical(pre_patch)
         post_patch = self._to_tensor_sar(post_patch)
 
+        has_building = self.has_building[metadata_idx]
+
         return {
             "pre_patch": pre_patch,
             "post_patch": post_patch,
@@ -194,6 +197,7 @@ class OnTheFlyPatchDataset(Dataset):
             "image_id": image_id,
             "position": (roi_y, roi_x),
             "damage_ratio": damage_ratio,
+            "has_building": has_building,
         }
 
     def _to_tensor_optical(self, img):
