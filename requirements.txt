@@ -11,3 +11,4 @@ h5py
 scikit-learn
 typer
 rich
+umap-learn
