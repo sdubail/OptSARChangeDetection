@@ -689,3 +689,6 @@ def main():
         use_tsne=args.use_tsne,
         use_umap=args.use_umap
     )
+    
+if __name__ == "__main__":
+    main()
