@@ -548,6 +548,9 @@ class ModelVisualizer:
 
 
 def main():
+    # Make the UMAP_AVAILABLE flag accessible in this function
+    global UMAP_AVAILABLE
+    
     parser = argparse.ArgumentParser(description="Visualize model outputs")
     parser.add_argument("--config", type=Path, default="configs/default.yaml", 
                       help="Path to configuration file")
@@ -689,6 +692,5 @@ def main():
         use_tsne=args.use_tsne,
         use_umap=args.use_umap
     )
-    
 if __name__ == "__main__":
     main()
