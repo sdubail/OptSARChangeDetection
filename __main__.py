@@ -464,7 +464,7 @@ def infer_predict(
     )
 
     # Define 5 thresholds to evaluate
-    thresholds = [0.5, 0.8, 1.0, 1.2, 1.5]
+    thresholds = [0.8, 1.0, 1.25, 1.5]
 
     # Compute metrics for each threshold
     results = []
