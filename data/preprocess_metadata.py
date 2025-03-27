@@ -47,8 +47,11 @@ class SimpleDatasetLoader:
         self.image_ids = [
             f.name.replace("_post_disaster.tif", "")
             for f in post_event_dir.glob("*_post_disaster.tif")
-            if (not exclude_blacklist
-            or f.name.replace("_post_disaster.tif", "") not in blacklist) and select_disaster in f.name
+            if (
+                not exclude_blacklist
+                or f.name.replace("_post_disaster.tif", "") not in blacklist
+            )
+            and select_disaster in f.name
         ][:limit]
         logger.info(f"Found {len(self.image_ids)} images for {split} split")
 
@@ -127,6 +130,7 @@ def extract_patch_metadata(
     stride=8,
     pos_threshold=0.05,
     min_valid_pixels=0.8,
+    building_threshold=0.2,  # Nouveau paramètre pour le seuil de bâtiment
 ):
     """
     Extract metadata for valid patches directly into arrays.
@@ -141,6 +145,7 @@ def extract_patch_metadata(
         stride: Stride for patch extraction
         pos_threshold: Maximum damage ratio for positive pairs
         min_valid_pixels: Minimum ratio of valid pixels needed
+        building_threshold: Minimum ratio of building pixels needed for building label
 
     Returns:
         Arrays with extracted metadata
@@ -156,7 +161,7 @@ def extract_patch_metadata(
 
     if start_y >= end_y or start_x >= end_x:
         logger.warning(f"Image {image_id} too small for extraction: {h}x{w}")
-        return [], [], [], [], []
+        return [], [], [], [], [], []
 
     # Initialize lists to collect metadata
     image_ids = []
@@ -164,6 +169,7 @@ def extract_patch_metadata(
     context_positions = []
     is_positive_flags = []
     damage_ratios = []
+    has_building_flags = []
 
     # Process each potential patch
     for y in range(start_y, end_y, stride):
@@ -202,20 +208,31 @@ def extract_patch_metadata(
             damage_ratio = damage_pixels / total_valid_pixels
             is_positive = damage_ratio <= pos_threshold
 
+            building_pixels = np.sum(label_roi_flat > 0)
+            building_ratio = building_pixels / total_valid_pixels
+            has_building = building_ratio >= building_threshold
+
             # Extract context coords for later use
             ctx_y_start = y - pad_size
             ctx_x_start = x - pad_size
             ctx_y_end = y + roi_patch_size + pad_size
             ctx_x_end = x + roi_patch_size + pad_size
 
-            # Add data directly to lists
             image_ids.append(image_id)
             roi_positions.append((y, x))
             context_positions.append((ctx_y_start, ctx_x_start, ctx_y_end, ctx_x_end))
             is_positive_flags.append(is_positive)
             damage_ratios.append(float(damage_ratio))
+            has_building_flags.append(has_building)
 
-    return image_ids, roi_positions, context_positions, is_positive_flags, damage_ratios
+    return (
+        image_ids,
+        roi_positions,
+        context_positions,
+        is_positive_flags,
+        damage_ratios,
+        has_building_flags,
+    )
 
 
 def process_and_save_metadata(
@@ -224,6 +241,7 @@ def process_and_save_metadata(
     all_context_positions,
     all_is_positive,
     all_damage_ratios,
+    all_has_building,  # Nouveau paramètre
     output_dir,
     train_ratio=0.8,
     seed=42,
@@ -237,6 +255,7 @@ def process_and_save_metadata(
         all_context_positions: List of all context positions
         all_is_positive: List of all positive flags
         all_damage_ratios: List of all damage ratios
+        all_has_building: List of all building flags
         output_dir: Directory to save processed metadata
         train_ratio: Ratio of data to use for training
         seed: Random seed for splitting
@@ -252,6 +271,7 @@ def process_and_save_metadata(
     all_context_positions = np.array(all_context_positions, dtype=np.int32)
     all_is_positive = np.array(all_is_positive, dtype=np.bool_)
     all_damage_ratios = np.array(all_damage_ratios, dtype=np.float32)
+    all_has_building = np.array(all_has_building, dtype=np.bool_)  # Conversion en array
 
     # Create random permutation for splitting
     n_samples = len(all_image_ids)
@@ -269,6 +289,7 @@ def process_and_save_metadata(
         all_context_positions[train_indices],
         all_is_positive[train_indices],
         all_damage_ratios[train_indices],
+        all_has_building[train_indices],
         output_dir,
         "train",
     )
@@ -279,6 +300,7 @@ def process_and_save_metadata(
         all_context_positions[val_indices],
         all_is_positive[val_indices],
         all_damage_ratios[val_indices],
+        all_has_building[val_indices],
         output_dir,
         "val",
     )
@@ -292,6 +314,7 @@ def save_split_metadata(
     context_positions,
     is_positive,
     damage_ratios,
+    has_building,
     output_dir,
     split,
 ):
@@ -304,6 +327,7 @@ def save_split_metadata(
         context_positions: Array of context positions
         is_positive: Array of positive flags
         damage_ratios: Array of damage ratios
+        has_building: Array of building flags
         output_dir: Directory to save metadata
         split: 'train' or 'val'
 
@@ -320,11 +344,18 @@ def save_split_metadata(
             "positive_patches": 0,
             "negative_patches": 0,
             "positive_ratio": 0,
+            "building_patches": 0,
+            "non_building_patches": 0,
+            "building_ratio": 0,
         }
 
     # Get indices of positive and negative samples
     positive_indices = np.where(is_positive)[0]
     negative_indices = np.where(~is_positive)[0]
+
+    # Get indices of patches with and without buildings
+    building_indices = np.where(has_building)[0]
+    non_building_indices = np.where(~has_building)[0]
 
     # Save arrays
     np.save(output_dir / f"{split}_image_ids.npy", image_ids)
@@ -332,15 +363,23 @@ def save_split_metadata(
     np.save(output_dir / f"{split}_context_positions.npy", context_positions)
     np.save(output_dir / f"{split}_is_positive.npy", is_positive)
     np.save(output_dir / f"{split}_damage_ratios.npy", damage_ratios)
+    np.save(output_dir / f"{split}_has_building.npy", has_building)
 
     # Save positive and negative indices separately
     np.save(output_dir / f"{split}_positive_indices.npy", positive_indices)
     np.save(output_dir / f"{split}_negative_indices.npy", negative_indices)
 
+    # Save building and non-building indices separately
+    np.save(output_dir / f"{split}_building_indices.npy", building_indices)
+    np.save(output_dir / f"{split}_non_building_indices.npy", non_building_indices)
+
     # Calculate statistics
     n_positive = len(positive_indices)
     n_negative = len(negative_indices)
     pos_ratio = n_positive / n_items if n_items > 0 else 0
+
+    n_building = len(building_indices)
+    building_ratio = n_building / n_items if n_items > 0 else 0
 
     # Save summary
     stats = {
@@ -348,13 +387,18 @@ def save_split_metadata(
         "positive_patches": n_positive,
         "negative_patches": n_negative,
         "positive_ratio": pos_ratio,
+        "building_patches": n_building,
+        "non_building_patches": len(non_building_indices),
+        "building_ratio": building_ratio,
     }
 
     with open(output_dir / f"{split}_summary.json", "w") as f:
         json.dump(stats, f)
 
     logger.info(
-        f"{split.capitalize()} set: {n_items} patches ({n_positive} positive, {n_negative} negative)"
+        f"{split.capitalize()} set: {n_items} patches "
+        f"({n_positive} positive, {n_negative} negative) "
+        f"({n_building} with buildings, {len(non_building_indices)} without buildings)"
     )
 
     return stats
@@ -384,7 +428,15 @@ def main():
     )
     parser.add_argument(
         "--select_disaster",
-        type=str, default="", help="Select a scene / disaster",
+        type=str,
+        default="",
+        help="Select a scene / disaster",
+    )
+    parser.add_argument(
+        "--building_threshold",
+        type=float,
+        default=0.2,
+        help="Minimum ratio of building pixels needed for building label",
     )
     args = parser.parse_args()
 
@@ -400,6 +452,7 @@ def main():
     stride = config.get("patch_stride", 8)
     pos_threshold = config.get("pos_threshold", 0.05)
     min_valid_pixels = config.get("min_valid_pixels", 0.8)
+    building_threshold = args.building_threshold
 
     dataset = SimpleDatasetLoader(
         root_dir=config["data"]["root_dir"],
@@ -416,6 +469,7 @@ def main():
     all_context_positions = []
     all_is_positive = []
     all_damage_ratios = []
+    all_has_building = []
 
     # Process each image
     for idx in tqdm(range(len(dataset)), desc="Processing images"):
@@ -433,16 +487,19 @@ def main():
             label = label.numpy()
 
         # Extract metadata for this image directly into arrays
-        (img_ids, roi_pos, ctx_pos, is_pos, dmg_ratios) = extract_patch_metadata(
-            pre_img,
-            post_img,
-            label,
-            image_id,
-            roi_patch_size=roi_patch_size,
-            context_patch_size=context_patch_size,
-            stride=stride,
-            pos_threshold=pos_threshold,
-            min_valid_pixels=min_valid_pixels,
+        (img_ids, roi_pos, ctx_pos, is_pos, dmg_ratios, has_building) = (
+            extract_patch_metadata(
+                pre_img,
+                post_img,
+                label,
+                image_id,
+                roi_patch_size=roi_patch_size,
+                context_patch_size=context_patch_size,
+                stride=stride,
+                pos_threshold=pos_threshold,
+                min_valid_pixels=min_valid_pixels,
+                building_threshold=building_threshold,
+            )
         )
 
         # Extend our main lists
@@ -451,6 +508,7 @@ def main():
         all_context_positions.extend(ctx_pos)
         all_is_positive.extend(is_pos)
         all_damage_ratios.extend(dmg_ratios)
+        all_has_building.extend(has_building)
 
         logger.info(f"Image {image_id}: Found {len(img_ids)} valid patches")
 
@@ -461,6 +519,7 @@ def main():
         all_context_positions,
         all_is_positive,
         all_damage_ratios,
+        all_has_building,
         output_dir,
         args.train_ratio,
         args.seed,
@@ -473,6 +532,7 @@ def main():
         "stride": stride,
         "pos_threshold": pos_threshold,
         "min_valid_pixels": min_valid_pixels,
+        "building_threshold": building_threshold,
         "train_ratio": args.train_ratio,
         "random_seed": args.seed,
         "stats": stats,
@@ -484,10 +544,14 @@ def main():
     logger.info(f"Metadata processing complete! Files saved to {output_dir}")
     logger.info(f"Total patches: {stats['total']}")
     logger.info(
-        f"Training: {stats['train']['total_patches']} patches ({stats['train']['positive_patches']} positive, {stats['train']['negative_patches']} negative)"
+        f"Training: {stats['train']['total_patches']} patches "
+        f"({stats['train']['positive_patches']} positive, {stats['train']['negative_patches']} negative) "
+        f"({stats['train']['building_patches']} with buildings, {stats['train']['non_building_patches']} without buildings)"
     )
     logger.info(
-        f"Validation: {stats['val']['total_patches']} patches ({stats['val']['positive_patches']} positive, {stats['val']['negative_patches']} negative)"
+        f"Validation: {stats['val']['total_patches']} patches "
+        f"({stats['val']['positive_patches']} positive, {stats['val']['negative_patches']} negative) "
+        f"({stats['val']['building_patches']} with buildings, {stats['val']['non_building_patches']} without buildings)"
     )
 
 
