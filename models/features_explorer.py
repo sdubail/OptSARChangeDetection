@@ -507,7 +507,7 @@ def main():
                       help="Path to the model config file")
     parser.add_argument("--output_dir", type=str, default="output/features_explorer", 
                       help="Directory to save output")
-    parser.add_argument("--device", type=str, default="cpu", help="Device to run on (cuda/cpu)")
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to run on (cuda/cpu)")
     parser.add_argument("--show_labels", action="store_true", help="Show point labels in static visualizations")
     parser.add_argument("--not_showing_building_labels", action="store_true", help="Show building labels in static visualizations")
     # using tsne or not
