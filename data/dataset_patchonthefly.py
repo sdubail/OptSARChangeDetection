@@ -1,6 +1,7 @@
 # data/dataset_onthefly_numpy.py
 import json
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -54,8 +55,11 @@ class OnTheFlyPatchDataset(Dataset):
         )
         self.is_positive = np.load(self.metadata_dir / f"{split}_is_positive.npy")
         self.damage_ratios = np.load(self.metadata_dir / f"{split}_damage_ratios.npy")
-
-        self.has_building = np.load(self.metadata_dir / f"{split}_has_building.npy")
+        if os.path.exists(self.metadata_dir / f"{split}_has_building.npy"):
+            self.has_building = np.load(self.metadata_dir / f"{split}_has_building.npy")
+        else:
+            print("No building presence data indexed.")
+            self.has_building = None
         # Load positive and negative indices separately
         positive_indices = np.load(self.metadata_dir / f"{split}_positive_indices.npy")
         negative_indices = np.load(self.metadata_dir / f"{split}_negative_indices.npy")
@@ -187,7 +191,9 @@ class OnTheFlyPatchDataset(Dataset):
         pre_patch = self._to_tensor_optical(pre_patch)
         post_patch = self._to_tensor_sar(post_patch)
 
-        has_building = self.has_building[metadata_idx]
+        has_building = (
+            self.has_building[metadata_idx] if self.has_building is not None else None
+        )
 
         return {
             "pre_patch": pre_patch,
