@@ -43,10 +43,34 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tqdm import tqdm
 
+# Configuration matplotlib pour les figures destinées à un article scientifique
+plt.rcParams.update({
+    'font.size': 12,                      # Taille de police de base
+    'axes.titlesize': 18,                 # Taille du titre des axes
+    'axes.labelsize': 18,                 # Taille des labels des axes
+    'xtick.labelsize': 18,                # Taille des labels des graduations en x
+    'ytick.labelsize': 18,                # Taille des labels des graduations en y
+    'legend.fontsize': 10,                # Taille de la légende
+    'figure.titlesize': 16,               # Taille du titre de la figure
+    'figure.figsize': (8, 6),             # Taille par défaut des figures
+    'figure.dpi': 300,                    # Résolution des figures
+    'savefig.dpi': 300,                   # Résolution pour les figures enregistrées
+    'savefig.bbox': 'tight',              # Ajustement automatique des marges
+    'savefig.pad_inches': 0.1,            # Padding autour de la figure
+    'lines.linewidth': 1.5,               # Épaisseur des lignes
+    'axes.linewidth': 1.0,                # Épaisseur des axes
+    'axes.grid': False,                   # Afficher ou non la grille
+    'grid.alpha': 0.3,                    # Transparence de la grille
+    'legend.frameon': True,               # Cadre autour de la légende
+    'legend.edgecolor': '0.8',            # Couleur du cadre de la légende
+    'axes.spines.top': True,              # Afficher le cadre supérieur
+    'axes.spines.right': True,            # Afficher le cadre droit
+})
+
 console = Console()
 
 class ModelVisualizer:
-    def __init__(self, model, dataloader, device="cuda", output_dir="visualizations", normalize=False):
+    def __init__(self, model, dataloader, device="cuda", output_dir="visualizations", normalize=False, add_title_in_plot=True):
         """
         Initialize the model visualizer.
         
@@ -55,6 +79,8 @@ class ModelVisualizer:
             dataloader: DataLoader containing the dataset
             device: Device to run the model on
             output_dir: Directory to save visualizations
+            normalize: Whether to normalize feature vectors before visualization
+            add_title_in_plot: Whether to add a title to plots
         """
         self.model = model
         self.dataloader = dataloader
@@ -71,6 +97,7 @@ class ModelVisualizer:
         self.has_building_labels = []
         self.normalize = normalize
         self.chosen_methods = ['pca', 'tsne', 'umap']
+        self.add_title_in_plot = add_title_in_plot
 
     def collect_features(self):
         """
@@ -283,7 +310,8 @@ class ModelVisualizer:
                     )
                 
                 plt.legend(loc='best')
-                plt.title(f'SAR Encoder Features - {method.upper()} (n={n_samples})')
+                if self.add_title_in_plot:
+                    plt.title(f'SAR Encoder Features - {method.upper()} (n={n_samples})')
                 plt.xlabel(f'{method.upper()} Component 1')
                 plt.ylabel(f'{method.upper()} Component 2')
                 
@@ -417,7 +445,8 @@ class ModelVisualizer:
                         )
                         
                         plt.legend(loc='best')
-                        plt.title(f'Projection Space - {method.upper()} (n={n_samples*2})')
+                        if self.add_title_in_plot:
+                            plt.title(f'Projection Space - {method.upper()} (n={n_samples*2})')
                         plt.xlabel(f'{method.upper()} Component 1')
                         plt.ylabel(f'{method.upper()} Component 2')
                         
@@ -511,7 +540,8 @@ class ModelVisualizer:
                         )
                         
                         plt.legend(loc='best')
-                        plt.title(f'Projection Space - {method.upper()} (n={n_samples*2})')
+                        if self.add_title_in_plot:
+                            plt.title(f'Projection Space - {method.upper()} (n={n_samples*2})')
                         plt.xlabel(f'{method.upper()} Component 1')
                         plt.ylabel(f'{method.upper()} Component 2')
                         
@@ -571,6 +601,9 @@ def main():
     parser.add_argument("--umap_n_neighbors", type=int, default=15, help="Number of neighbors for UMAP")
     parser.add_argument("--umap_min_dist", type=float, default=0.1, help="Minimum distance for UMAP")
     parser.add_argument("--umap_metric", type=str, default="euclidean", help="Distance metric for UMAP")
+    # Ajout du nouveau paramètre pour contrôler l'affichage du titre
+    parser.add_argument("--add_title_in_plot", action="store_true", default=False, 
+                      help="Whether to add a title to the plots")
 
     # Dataset parameters
     parser.add_argument("--patch_dir", type=str, default="data/processed_patches",
@@ -661,6 +694,7 @@ def main():
         device=args.device, 
         output_dir=args.output_dir,
         normalize=args.normalize,
+        add_title_in_plot=args.add_title_in_plot
     )
     visualizer.collect_features()
     
