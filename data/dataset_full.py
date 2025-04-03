@@ -1,14 +1,13 @@
-###
-# THIS IS A DATASET CLASS TO LOAD THE FULL IMAGES DIRECTLY FROM DATASET. NO PATCH EXTRACTION HAS BEEN IMPLEMENTED HERE
-###
+"""
+This is a dataset class for loading the full images directly from the dataset.
+NO PATCH EXTRACTION HAS BEEN IMPLEMENTED HERE.
+"""
 
 from pathlib import Path
-
 import numpy as np
 import rasterio
 import torch
 from torch.utils.data import Dataset
-
 
 class MultimodalDamageDataset(Dataset):
     """Dataset for multimodal damage assessment with optical pre-event and SAR post-event images."""

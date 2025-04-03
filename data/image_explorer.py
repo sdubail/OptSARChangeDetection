@@ -387,9 +387,6 @@ class ImageCanvas(Canvas):
         if new_zoom < self.min_zoom or new_zoom > self.max_zoom:
             return
 
-        # Save old zoom for relative positioning
-        old_zoom = self.zoom_level
-
         # Update zoom level
         self.zoom_level = new_zoom
 
@@ -430,11 +427,7 @@ class FullImageExplorer:
         self.root.bind("<KeyPress-n>", self.on_key_next)
         self.root.bind("<KeyPress-c>", self.on_key_c)
         self.root.bind("<KeyPress-s>", self.on_key_s)
-        
-        # Initial image loading will be done via main() after the GUI is set up
-
-        # Will load the first or selected image after initialization
-
+    
     def load_image_ids(self):
         """Load all available image IDs from the dataset."""
         try:

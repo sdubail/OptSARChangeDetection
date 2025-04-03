@@ -1,36 +1,27 @@
 import sys
 import os
+import yaml
+import argparse
+from pathlib import Path
+from rich.console import Console
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import torch.nn.functional as F
+import torch
+import numpy as np
+from torch.utils.data import DataLoader
+
 
 from data.transforms import get_transform
 from data.dataset_patchonthefly import OnTheFlyPatchDataset
-from rich import print as rprintpip
-from rich.console import Console
-
-
-import argparse
-import os
-from pathlib import Path
-import numpy as np
-import torch
-from tkinter import (
-    BOTH, BOTTOM, HORIZONTAL, LEFT, RIGHT, TOP, Button, Entry, Frame,
-    Label, OptionMenu, Scale, StringVar, Tk, X, Y
-)
 from models.pseudo_siamese import (
     MultimodalDamageNet,  
 )
 
-
-from data.dataset_patches import PreprocessedPatchDataset
-from data.transforms import get_transform
-import yaml
-import h5py
 from sklearn.decomposition import PCA
-from torch.utils.data import DataLoader
 from sklearn.manifold import TSNE
-# Import UMAP with error handling
+
+# Import UMAP
 try:
     import umap.umap_ as umap
     UMAP_AVAILABLE = True
@@ -39,32 +30,33 @@ except ImportError:
     print("Warning: UMAP is not installed. To use UMAP visualization, please install it with:")
     print("    pip install umap-learn")
     print("Continuing without UMAP support...")
+    
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tqdm import tqdm
 
-# Configuration matplotlib pour les figures destinées à un article scientifique
+# matplotlib configuration for figures of presentation and report
 plt.rcParams.update({
-    'font.size': 12,                      # Taille de police de base
-    'axes.titlesize': 18,                 # Taille du titre des axes
-    'axes.labelsize': 18,                 # Taille des labels des axes
-    'xtick.labelsize': 18,                # Taille des labels des graduations en x
-    'ytick.labelsize': 18,                # Taille des labels des graduations en y
-    'legend.fontsize': 10,                # Taille de la légende
-    'figure.titlesize': 16,               # Taille du titre de la figure
-    'figure.figsize': (8, 6),             # Taille par défaut des figures
-    'figure.dpi': 300,                    # Résolution des figures
-    'savefig.dpi': 300,                   # Résolution pour les figures enregistrées
-    'savefig.bbox': 'tight',              # Ajustement automatique des marges
-    'savefig.pad_inches': 0.1,            # Padding autour de la figure
-    'lines.linewidth': 1.5,               # Épaisseur des lignes
-    'axes.linewidth': 1.0,                # Épaisseur des axes
-    'axes.grid': False,                   # Afficher ou non la grille
-    'grid.alpha': 0.3,                    # Transparence de la grille
-    'legend.frameon': True,               # Cadre autour de la légende
-    'legend.edgecolor': '0.8',            # Couleur du cadre de la légende
-    'axes.spines.top': True,              # Afficher le cadre supérieur
-    'axes.spines.right': True,            # Afficher le cadre droit
+    'font.size': 12,
+    'axes.titlesize': 18,
+    'axes.labelsize': 18,
+    'xtick.labelsize': 18,
+    'ytick.labelsize': 18,  
+    'legend.fontsize': 10, 
+    'figure.titlesize': 16,
+    'figure.figsize': (8, 6),
+    'figure.dpi': 300,
+    'savefig.dpi': 300,
+    'savefig.bbox': 'tight',
+    'savefig.pad_inches': 0.1,
+    'lines.linewidth': 1.5,
+    'axes.linewidth': 1.0,
+    'axes.grid': False,
+    'grid.alpha': 0.3,
+    'legend.frameon': True,
+    'legend.edgecolor': '0.8',
+    'axes.spines.top': True,
+    'axes.spines.right': True,
 })
 
 console = Console()
@@ -158,16 +150,18 @@ class ModelVisualizer:
         Returns:
             Reduced data
         """
-        # Adjust perplexity if needed for small samples
+        
         n_samples = data.shape[0]
-        adjusted_perplexity = min(perplexity, n_samples // 3)
-        adjusted_perplexity = max(adjusted_perplexity, 5)  # Minimum perplexity
         
         if method.lower() == 'pca':
             reducer = PCA(n_components=n_components)
             return reducer.fit_transform(data)
         
         elif method.lower() == 'tsne':
+            # Adjust perplexity if needed for small samples
+            adjusted_perplexity = min(perplexity, n_samples // 3)
+            adjusted_perplexity = max(adjusted_perplexity, 5)  # Minimum perplexity
+
             reducer = TSNE(n_components=n_components, perplexity=adjusted_perplexity, random_state=42)
             return reducer.fit_transform(data)
         
@@ -202,7 +196,6 @@ class ModelVisualizer:
             use_tsne: Whether to use t-SNE for visualization
             use_umap: Whether to use UMAP for visualization
         """
-        # Generate all visualizations
         self._visualize_encoders(save_to_file, show_labels, not_showing_building_labels, use_tsne, use_umap)
         self._visualize_projection_space(save_to_file, show_labels, not_showing_building_labels, use_tsne, use_umap)
     
@@ -217,13 +210,11 @@ class ModelVisualizer:
             use_tsne: Whether to use t-SNE for visualization
             use_umap: Whether to use UMAP for visualization
         """
-        methods = []
+        methods = ['pca'] #always include PCA
         if use_tsne:
             methods.append('tsne')
         if use_umap:
             methods.append('umap')
-        # Always include PCA
-        methods.append('pca')
 
         n_samples = self.sar_features.shape[0]
         
@@ -232,12 +223,14 @@ class ModelVisualizer:
             try:
                 print(f"Reducing dimensions using {method.upper()}...")
                 reduced_data = self._apply_dimension_reduction(self.sar_features, method=method)
-                # save reduced data for later use
+                
+                ## Save reduced data for later use
                 # first create the directory if it doesn't exist
                 (self.output_dir / 'sar_encoder').mkdir(exist_ok=True, parents=True)
                 # then save the reduced data
                 np.save(self.output_dir / f'sar_encoder/reduced_data_{method}.npy', reduced_data)
                 
+                ## PLOT
                 print(f"Creating {method.upper()} visualization...\n")
                 plt.figure(figsize=(10, 8))
                 
@@ -347,13 +340,11 @@ class ModelVisualizer:
             use_tsne: Whether to use t-SNE for visualization
             use_umap: Whether to use UMAP for visualization
         """
-        methods = []
+        methods = ['pca'] # always include PCA
         if use_tsne:
             methods.append('tsne')
         if use_umap:
             methods.append('umap')
-        # Always include PCA
-        methods.append('pca')
         
         # Combine optical and SAR projections
         combined_projections = np.concatenate([self.optical_projected, self.sar_projected])
@@ -375,7 +366,6 @@ class ModelVisualizer:
         sar_no_building_mask = has_building_flat == 0
         
         # Add damage information
-        # Note: optical images (pre-event) are always intact, while SAR may be intact or damaged
         optical_damage_labels = np.ones(n_optical)  # All optical are intact
         damage_labels = np.concatenate([optical_damage_labels, is_positive_flat])
         
@@ -383,7 +373,8 @@ class ModelVisualizer:
         sar_no_building_labels = np.concatenate([optical_labels, sar_no_building_mask])
         sar_building_change_labels = np.concatenate([optical_labels, sar_building_damaged_mask])
         sar_building_no_change_labels = np.concatenate([optical_labels, sar_building_intact_mask])
-        # save labels for later use
+        
+        ## Save labels for later use
         # first create the directory if it doesn't exist
         (self.output_dir / 'projection_space').mkdir(exist_ok=True, parents=True)
         # then save the labels
@@ -402,13 +393,14 @@ class ModelVisualizer:
                     try:
                         print(f"Reducing dimensions using {method.upper()}...")
                         reduced_data = self._apply_dimension_reduction(combined_projections, method=method)
-                        # save reduced data for later use
+                        
+                        ## Save reduced data for later use
                         # first create the directory if it doesn't exist
                         (self.output_dir / 'projection_space').mkdir(exist_ok=True, parents=True)
                         np.save(self.output_dir / f'projection_space/reduced_data_{method}.npy', reduced_data)
 
                         print(f"Creating {method.upper()} visualization...")
-                        # 1. Plot by modality and damage together
+                        ## PLOT
                         plt.figure(figsize=(12, 9))
                         
                         # Separate data by modality and damage status
@@ -420,7 +412,7 @@ class ModelVisualizer:
                         plt.scatter(
                             reduced_data[optical_indices, 0],
                             reduced_data[optical_indices, 1],
-                            marker='^',  # Triangle for optical
+                            marker='^', 
                             color='blue',
                             alpha=0.7,
                             label='Optical'
@@ -429,7 +421,7 @@ class ModelVisualizer:
                         plt.scatter(
                             reduced_data[sar_intact_indices, 0],
                             reduced_data[sar_intact_indices, 1],
-                            marker='o',  # Circle for SAR
+                            marker='o', 
                             color='green',
                             alpha=0.7,
                             label='No Change - SAR'
@@ -438,7 +430,7 @@ class ModelVisualizer:
                         plt.scatter(
                             reduced_data[sar_damaged_indices, 0],
                             reduced_data[sar_damaged_indices, 1],
-                            marker='o',  # Circle for SAR
+                            marker='o',  
                             color='red',
                             alpha=0.7,
                             label='Change - SAR'
@@ -486,13 +478,14 @@ class ModelVisualizer:
                     try:
                         print(f"Reducing dimensions using {method.upper()}...")
                         reduced_data = self._apply_dimension_reduction(combined_projections, method=method)
-                        # save reduced data for later use
+                        
+                        ## Save reduced data for later use
                         # first create the directory if it doesn't exist
                         (self.output_dir / 'projection_space').mkdir(exist_ok=True, parents=True)
                         np.save(self.output_dir / f'projection_space/reduced_data_{method}.npy', reduced_data)
                         
                         print(f"\nCreating {method.upper()} visualization...")
-                        # 1. Plot by modality and damage together
+                        ## PLOT
                         plt.figure(figsize=(12, 9))
                         
                         # Separate data by modality and damage status
@@ -506,7 +499,7 @@ class ModelVisualizer:
                         plt.scatter(
                             reduced_data[optical_indices, 0],
                             reduced_data[optical_indices, 1],
-                            marker='^',  # Triangle for optical
+                            marker='^', 
                             color='blue',
                             alpha=0.7,
                             label='Optical'
@@ -515,7 +508,7 @@ class ModelVisualizer:
                         plt.scatter(
                             reduced_data[no_change_sar_building_indices, 0],
                             reduced_data[no_change_sar_building_indices, 1],
-                            marker='o',  # Circle for SAR
+                            marker='o',
                             color='green',
                             alpha=0.7,
                             label='No Change - SAR Building'
@@ -524,7 +517,7 @@ class ModelVisualizer:
                         plt.scatter(
                             reduced_data[change_sar_building_indices, 0],
                             reduced_data[change_sar_building_indices, 1],
-                            marker='o',  # Circle for SAR
+                            marker='o',
                             color='red',
                             alpha=0.7,
                             label='Change - SAR Building'
@@ -533,7 +526,7 @@ class ModelVisualizer:
                         plt.scatter(
                             reduced_data[sar_no_building_indices, 0],
                             reduced_data[sar_no_building_indices, 1],
-                            marker='o',  # Circle for SAR
+                            marker='o',
                             color='black',
                             alpha=0.7,
                             label='SAR No Building'
@@ -636,7 +629,7 @@ def main():
         with open(args.config, "r") as f:
             config_data = yaml.safe_load(f)
     
-    # Check if CUDA is available
+    # Check if CUDA is available and set device to cpu if not
     if args.device == "cuda" and not torch.cuda.is_available():
         print("CUDA not available, using CPU instead")
         args.device = "cpu"
@@ -687,7 +680,7 @@ def main():
     
     print(f"Validation dataset loaded with {len(val_dataset)} samples")
     
-    # Generate static visualizations
+    # Generate visualizations
     visualizer = ModelVisualizer(
         model, 
         dataloader, 
@@ -701,18 +694,6 @@ def main():
     # Check if UMAP is available when specified
     if args.use_umap and not UMAP_AVAILABLE:
         print("Warning: UMAP visualization requested but UMAP is not installed.")
-        print("Installing UMAP now...")
-        try:
-            import subprocess
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "umap-learn"])
-            print("UMAP successfully installed!")
-            # Re-import after installation
-            import umap.umap_ as umap
-            UMAP_AVAILABLE = True
-        except Exception as e:
-            print(f"Failed to install UMAP: {e}")
-            print("Continuing without UMAP visualization...")
-            args.use_umap = False
     
     # Set UMAP parameters if specified and available
     if args.use_umap and UMAP_AVAILABLE:

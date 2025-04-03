@@ -585,7 +585,7 @@ def _create_final_dataset(temp_dir, output_dir, metadata, split, patch_config=No
         for f in batch_files.values():
             f.close()
 
-    # Save metadata JSON without batch information
+    # Save metadata JSON
     cleaned_metadata = []
     for idx, meta in enumerate(metadata):
         cleaned_metadata.append(

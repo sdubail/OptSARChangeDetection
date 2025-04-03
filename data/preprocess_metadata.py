@@ -1,3 +1,11 @@
+""" 
+A code to process metadata for a dataset containing pre-event optical images, post-event SAR images, and damage labels.
+The script extracts patches from the images, calculates damage ratios, and saves the metadata for training and validation splits.
+It also includes options for limiting the number of images processed, selecting specific disasters, and excluding blacklisted images.
+
+The metadata includes information about the image ID, ROI positions, context positions, positive/negative flags, damage ratios, and building presence.
+Metadata acts as an index for the dataset, allowing for efficient loading of patches during training.
+"""
 # data/preprocess_metadata_numpy.py
 import argparse
 import json
@@ -241,7 +249,7 @@ def process_and_save_metadata(
     all_context_positions,
     all_is_positive,
     all_damage_ratios,
-    all_has_building,  # Nouveau paramètre
+    all_has_building,
     output_dir,
     train_ratio=0.8,
     seed=42,

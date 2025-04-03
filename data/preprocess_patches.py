@@ -1,3 +1,8 @@
+""" 
+Extract and save patches for contrastive learning with context.
+This script processes images from a dataset, extracts patches, and saves them in HDF5 format for efficient training and validation.
+"""
+
 import argparse
 import json
 import logging

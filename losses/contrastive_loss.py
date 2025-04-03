@@ -71,7 +71,6 @@ class InfoNCEContrastiveLoss(nn.Module):
         Returns:
             Scalar loss value (average contrastive loss across all valid comparisons)
         """
-        batch_size = optical_features.shape[0]
 
         # Ensure is_positive is a float tensor for calculations
         if not isinstance(is_positive, torch.Tensor):
@@ -150,7 +149,7 @@ class InfoNCEContrastiveLoss(nn.Module):
         # return pos_loss_tot / n_comparisons, neg_loss_tot / n_comparisons
         return pos_loss_tot / n_positives, neg_loss_tot / n_negatives
 
-
+################ Classification loss #######################
 # class CombinedLoss(nn.Module):
 #     """
 #     Combined loss function for multimodal damage assessment.

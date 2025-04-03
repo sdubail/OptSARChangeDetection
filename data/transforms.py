@@ -1,5 +1,14 @@
-import random
+""" 
+This module contains the data augmentation and transformation functions for the dataset.
+It includes flipping, and rotation for training data augmentation.
+It also includes a function to get the appropriate transformations based on the split (train/val).
 
+Possible improvements:
+- It does not yet include a random cropping. See TODO for future improvements. 
+- Other transformations can be added to improve the model's robustness and generalization.
+- See the report's conclusion for more details on the improvements to be made.
+"""
+import random
 import numpy as np
 from torchvision import transforms
 
@@ -19,38 +28,6 @@ class Compose:
             )
 
         return {"pre_image": pre_img, "post_image": post_img}  # , "label": label}
-
-
-# class RandomCrop:
-#     def __init__(self, size):
-#         self.size = size
-
-#     def __call__(self, pre_img, post_img, label):
-#         h, w = pre_img.shape[:2]
-#         new_h, new_w = self.size, self.size
-
-#         if h > new_h and w > new_w:
-#             top = random.randint(0, h - new_h)
-#             left = random.randint(0, w - new_w)
-#         else:
-#             # Pad if image is smaller than crop size
-#             pad_h = max(0, new_h - h)
-#             pad_w = max(0, new_w - w)
-
-#             pre_img = np.pad(pre_img, ((0, pad_h), (0, pad_w), (0, 0)), mode="constant")
-#             post_img = np.pad(
-#                 post_img, ((0, pad_h), (0, pad_w), (0, 0)), mode="constant"
-#             )
-#             label = np.pad(label, ((0, pad_h), (0, pad_w), (0, 0)), mode="constant")
-
-#             top, left = 0, 0
-
-#         pre_img = pre_img[top : top + new_h, left : left + new_w]
-#         post_img = post_img[top : top + new_h, left : left + new_w]
-#         label = label[top : top + new_h, left : left + new_w]
-
-#         return {"pre_image": pre_img, "post_image": post_img, "label": label}
-
 
 class RandomFlip:
     def __call__(self, pre_img, post_img):  # , label):
@@ -88,3 +65,35 @@ def get_transform(split, crop_size=256):
         )
     else:
         return None
+
+# TODO: Implement RandomCrop 
+# class RandomCrop:
+#     def __init__(self, size):
+#         self.size = size
+
+#     def __call__(self, pre_img, post_img, label):
+#         h, w = pre_img.shape[:2]
+#         new_h, new_w = self.size, self.size
+
+#         if h > new_h and w > new_w:
+#             top = random.randint(0, h - new_h)
+#             left = random.randint(0, w - new_w)
+#         else:
+#             # Pad if image is smaller than crop size
+#             pad_h = max(0, new_h - h)
+#             pad_w = max(0, new_w - w)
+
+#             pre_img = np.pad(pre_img, ((0, pad_h), (0, pad_w), (0, 0)), mode="constant")
+#             post_img = np.pad(
+#                 post_img, ((0, pad_h), (0, pad_w), (0, 0)), mode="constant"
+#             )
+#             label = np.pad(label, ((0, pad_h), (0, pad_w), (0, 0)), mode="constant")
+
+#             top, left = 0, 0
+
+#         pre_img = pre_img[top : top + new_h, left : left + new_w]
+#         post_img = post_img[top : top + new_h, left : left + new_w]
+#         label = label[top : top + new_h, left : left + new_w]
+
+#         return {"pre_image": pre_img, "post_image": post_img, "label": label}
+

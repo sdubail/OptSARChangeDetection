@@ -5,9 +5,16 @@ import torchvision.models as models
 
 
 class OpticalEncoder(nn.Module):
-    """Encoder for optical images with modified ResNet18 backbone."""
+    """Encoder for optical images with modified ResNet18 or ResNet34 backbone."""
 
     def __init__(self, resnet_version=18, freeze_resnet=True, in_channels=3):
+        """
+        Args:
+            resnet_version (int): ResNet version to use (18 or 34).
+            freeze_resnet (bool): Whether to freeze the ResNet layers before layer4.
+            in_channels (int): Number of input channels for the first convolutional layer.
+                                Default is 3 for optical images (RGB).
+        """
         super(OpticalEncoder, self).__init__()
 
         # Load pretrained ResNet18 or ResNet34
@@ -20,7 +27,7 @@ class OpticalEncoder(nn.Module):
         else:
             raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
 
-        # Freeze all layers before layer4
+        # Freeze all layers before layer4 if freeze_resnet is True
         if freeze_resnet:
             for name, param in resnet.named_parameters():
                 if not any(layer in name for layer in ["layer4", "fc"]):
@@ -32,6 +39,7 @@ class OpticalEncoder(nn.Module):
         )
 
         # Initialize from pretrained
+        # useful as RGB optical images are close to the generalization scope of ResNet
         if in_channels == 3:
             self.conv1.weight.data = resnet.conv1.weight.data
         else:
@@ -43,7 +51,7 @@ class OpticalEncoder(nn.Module):
                         resnet.conv1.weight.data.mean(dim=1, keepdim=True)
                     )
 
-        # freeze the first layer
+        # freeze the first layer if freeze_resnet is True
         if freeze_resnet:
             for param in self.conv1.parameters():
                 param.requires_grad = False
@@ -56,7 +64,7 @@ class OpticalEncoder(nn.Module):
         self.layer1 = resnet.layer1
         self.layer2 = resnet.layer2
 
-        # Modify stride in layer3 and layer4 as mentioned in the paper
+        # Modify stride in layer3 and layer4
         self.layer3 = self._modify_layer_stride(resnet.layer3, stride=1)
         self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
 
@@ -92,9 +100,17 @@ class OpticalEncoder(nn.Module):
 
 
 class SAREncoder(nn.Module):
-    """Encoder for SAR images with modified ResNet18 backbone."""
+    """Encoder for SAR images with modified ResNet18 or ResNet34 backbone."""
 
-    def __init__(self, resnet_version=18, freeze_resnet=True, in_channels=1):
+    def __init__(self, resnet_version=18, freeze_resnet=False, in_channels=1):
+        """
+        Args:
+            resnet_version (int): ResNet version to use (18 or 34).
+            freeze_resnet (bool): Whether to freeze the ResNet layers before layer4.
+                                Default is False for SAR images, because they are not RGB like the training images for ResNet.
+            in_channels (int): Number of input channels for the first convolutional layer.
+                                Default is 1 for SAR images, because they are grayscale (amplitude).
+        """
         super(SAREncoder, self).__init__()
 
         # Load pretrained ResNet18 or ResNet34
@@ -107,7 +123,7 @@ class SAREncoder(nn.Module):
         else:
             raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
 
-        # Freeze all layers before layer4
+        # Freeze all layers before layer4 if freeze_resnet is True
         if freeze_resnet:
             for name, param in resnet.named_parameters():
                 if not any(layer in name for layer in ["layer4", "fc"]):
@@ -124,7 +140,7 @@ class SAREncoder(nn.Module):
             dim=1, keepdim=True
         ).repeat(1, in_channels, 1, 1)
 
-        # freeze the first layer
+        # freeze the first layer if freeze_resnet is True
         if freeze_resnet:
             for param in self.conv1.parameters():
                 param.requires_grad = False
@@ -137,7 +153,7 @@ class SAREncoder(nn.Module):
         self.layer1 = resnet.layer1
         self.layer2 = resnet.layer2
 
-        # Modify stride in layer3 and layer4 as mentioned in the paper
+        # Modify stride in layer3 and layer4
         self.layer3 = self._modify_layer_stride(resnet.layer3, stride=1)
         self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
 
@@ -226,7 +242,7 @@ class MultimodalDamageNet(nn.Module):
         self.optical_projector = Projector(self.optical_dim, out_dim=projection_dim)
         self.sar_projector = Projector(self.sar_dim, out_dim=projection_dim)
 
-        # No classifier is needed for pure contrastive learning
+        # NB. No classifier is needed for pure contrastive learning
 
     def forward(self, optical=None, sar=None):
         result = {}

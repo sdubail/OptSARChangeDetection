@@ -1,3 +1,11 @@
+""" 
+The script analyzes patch data from a JSON file, calculates the ratio of positive patches,
+and generates a histogram to visualize the distribution of positive patch ratios across images.
+
+Also, it provides command-line arguments to specify the input data file and output figure path.
+It includes functions to load data, calculate overall and image-specific statistics, and plot the distribution.
+"""
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import json

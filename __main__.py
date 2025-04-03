@@ -18,10 +18,9 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 from rich.traceback import install
-from sklearn.metrics import balanced_accuracy_score, confusion_matrix
+from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
 
-from data.dataset_patches import PreprocessedPatchDataset
 from data.dataset_patchonthefly import OnTheFlyPatchDataset
 from data.preprocess_metadata import SimpleDatasetLoader
 from data.transforms import get_transform

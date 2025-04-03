@@ -164,7 +164,7 @@ def set_border_to_zero(array, border_width):
     Returns:
         Modified array with borders set to zero
     """
-    # Make a copy to avoid modifying the original array
+    # Make a copy to avoid modifying original array
     result = array.copy()
 
     # Get array dimensions
@@ -310,11 +310,13 @@ def visualize_damage(
 
 def dome_window(size, power=2):
     """
-    Generates a 2D dome window (maximum at center, exactly zero at corners).
+    Generates a 2D dome window.
+    Maximum at center, and exactly zero weight at corners.
 
     Args:
         size (tuple): (height, width) of the window.
-        power (float): Controls the curvature of the dome (2 = parabolic, larger = sharper).
+        power (float): Controls the curvature of the dome
+                        (2=parabolic, larger=sharper).
 
     Returns:
         window (ndarray): 2D window with values in [0,1], zero at corners.
@@ -523,10 +525,8 @@ def visualize_change_map(
     # Normalize change map to [0, 1] for visualization
     vmin, vmax = 0, 1
 
-    # Create figure
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-
     # Plot continuous change map
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
     im1 = axes[0].imshow(change_map, cmap=cmap, vmin=vmin, vmax=vmax)
     axes[0].set_title("Change Intensity")
     plt.colorbar(im1, ax=axes[0])
