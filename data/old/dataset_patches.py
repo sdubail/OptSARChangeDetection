@@ -1,8 +1,3 @@
-"""
-Dataset loader for pre-processed patch datasets.
-This loads patches from the HDF5 files created by create_patch_dataset.py.
-"""
-
 import json
 import logging
 import os
@@ -40,19 +35,15 @@ class PreprocessedPatchDataset(Dataset):
         self.transform = transform
         self.cache_size = cache_size
 
-        # Load metadata
         metadata_path = self.patch_dir / f"{split}_metadata.json"
         with open(metadata_path, "r") as f:
             self.metadata = json.load(f)
 
-        # Open HDF5 file
         self.h5_path = self.patch_dir / f"{split}_patches.h5"
-        self.h5_file = None  # Will be opened on first access
+        self.h5_file = None
 
-        # Cache for frequently accessed patches
         self.cache = {}
 
-        # Load summary for stats
         summary_path = self.patch_dir / f"{split}_summary.json"
         if summary_path.exists():
             with open(summary_path, "r") as f:
@@ -67,7 +58,6 @@ class PreprocessedPatchDataset(Dataset):
             logger.info(f"Loaded {split} dataset with {len(self.metadata)} patches")
 
         if subset_fraction < 1.0:
-            # Create deterministic subset
             rng = np.random.RandomState(seed)
             indices = np.arange(len(self.metadata))
             rng.shuffle(indices)
@@ -95,11 +85,9 @@ class PreprocessedPatchDataset(Dataset):
         """Get a patch pair."""
         self._open_h5()
 
-        # Get metadata for this index
         meta = self.metadata[idx]
         h5_idx = meta["index"]
 
-        # Try to get from cache first
         if h5_idx in self.cache:
             pre_patch = self.cache[h5_idx]["pre_patch"]
             post_patch = self.cache[h5_idx]["post_patch"]
@@ -122,7 +110,6 @@ class PreprocessedPatchDataset(Dataset):
                     # "label": label,
                 }
 
-        # Get metadata
         is_positive = meta["is_positive"]
 
         # Apply transforms
@@ -130,11 +117,7 @@ class PreprocessedPatchDataset(Dataset):
             transformed = self.transform(pre_patch, post_patch)  # , label)
             pre_patch = transformed["pre_image"]
             post_patch = transformed["post_image"]
-            # label = transformed["label"]
 
-        # Convert to tensor if not already
-        # if not isinstance(pre_patch, torch.Tensor):
-        #     print("normalising")
         pre_patch = self._to_tensor_optical(pre_patch)
         post_patch = self._to_tensor_sar(post_patch)
         # label = torch.from_numpy(label.copy()).long()
@@ -188,7 +171,6 @@ class PreprocessedPatchDataset(Dataset):
         stds = img.std(axis=(0, 1), keepdims=True) + 1e-8
         img = (img - means) / stds
 
-        # Convert to tensor
         img = torch.from_numpy(img.transpose(2, 0, 1))
 
         return img
@@ -198,7 +180,6 @@ class PreprocessedPatchDataset(Dataset):
         if self.summary:
             return self.summary["positive_ratio"]
 
-        # Count from metadata
         pos_count = sum(1 for meta in self.metadata if meta["is_positive"])
         total = len(self.metadata)
         return pos_count / total if total > 0 else 0

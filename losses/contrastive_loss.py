@@ -19,7 +19,7 @@ class SupervisedContrastiveLoss(nn.Module):
             sar_features: Features from SAR encoder (batch_size, feature_dim)
             is_positive: Binary labels (0: damage = negative pair, 1: no damage = positive pair) (batch_size,)
         """
-        # Normalize features
+        # normalize features
         optical_features = F.normalize(optical_features, dim=1)
         sar_features = F.normalize(sar_features, dim=1)
 
@@ -72,24 +72,24 @@ class InfoNCEContrastiveLoss(nn.Module):
             Scalar loss value (average contrastive loss across all valid comparisons)
         """
 
-        # Ensure is_positive is a float tensor for calculations
+        # ensure is_positive is a float tensor for calculations
         if not isinstance(is_positive, torch.Tensor):
             is_positive = torch.tensor(is_positive, device=optical_features.device)
         is_positive = is_positive.float().view(-1)
 
-        # Normalize features to unit vectors
+        # normalize features to unit vectors
         optical_features = F.normalize(optical_features, dim=1)
         sar_features = F.normalize(sar_features, dim=1)
 
-        # Compute similarity matrix between all pairs in the batch
+        # compute similarity matrix between all pairs in the batch
         similarity_matrix = (
             torch.matmul(optical_features, sar_features.T) / self.temperature
         )
 
-        # Get diagonal similarities (corresponding pairs)
+        # get diagonal similarities (corresponding pairs)
         pair_similarities = similarity_matrix.diagonal()
 
-        # Initialize loss with a tensor that supports gradient calculation
+        # initialize loss with a tensor that supports gradient calculation
         neg_loss_tot = torch.zeros(
             1, device=optical_features.device, requires_grad=True
         )
@@ -98,11 +98,11 @@ class InfoNCEContrastiveLoss(nn.Module):
         )
         n_comparisons = 0
 
-        # Create masks for positive and negative examples
+        # create masks for positive and negative examples
         pos_mask = is_positive == 1
         neg_mask = is_positive == 0
 
-        # PART 1: Process positive examples (intact buildings in both modalities)
+        # PART 1: process positive examples (intact buildings in both modalities)
         n_positives = pos_mask.sum().item()
         if n_positives > 0:
             pos_similarities = pair_similarities[pos_mask]
@@ -131,7 +131,7 @@ class InfoNCEContrastiveLoss(nn.Module):
                 pos_loss_tot = pos_loss_tot + pos_loss.sum()
                 n_comparisons += n_positives
 
-        # PART 2: Process negative examples (damaged buildings)
+        # PART 2: process negative examples (damaged buildings)
         n_negatives = neg_mask.sum().item()
         if n_negatives > 0:
             neg_similarities = pair_similarities[neg_mask]
@@ -145,49 +145,5 @@ class InfoNCEContrastiveLoss(nn.Module):
         if n_comparisons == 0:
             return torch.zeros(1, requires_grad=True, device=optical_features.device)
 
-        # Return average loss
-        # return pos_loss_tot / n_comparisons, neg_loss_tot / n_comparisons
+        # return average loss
         return pos_loss_tot / n_positives, neg_loss_tot / n_negatives
-
-################ Classification loss #######################
-# class CombinedLoss(nn.Module):
-#     """
-#     Combined loss function for multimodal damage assessment.
-#     Includes supervised contrastive loss and classification loss.
-#     """
-
-#     def __init__(self, contrastive_weight=1.0, temperature=0.07):
-#         super(CombinedLoss, self).__init__()
-#         self.contrastive_loss = SupervisedContrastiveLoss(temperature=temperature)
-#         self.classification_loss = nn.CrossEntropyLoss()
-#         self.contrastive_weight = contrastive_weight
-
-#     def forward(self, outputs, targets):
-#         """
-#         Args:
-#             outputs: Dictionary of model outputs
-#             targets: Dictionary of targets
-
-#         Returns:
-#             Combined loss
-#         """
-#         # Contrastive loss
-#         contrast_loss = self.contrastive_loss(
-#             outputs['optical_projected'],
-#             outputs['sar_projected'],
-#             targets['loc_label']
-#         )
-
-#         # Classification loss
-#         class_loss = self.classification_loss(
-#             outputs['damage_logits'],
-#             targets['label']
-#         )
-
-#         # Combined loss
-#         loss = class_loss + self.contrastive_weight * contrast_loss
-
-#         return loss, {
-#             'contrastive_loss': contrast_loss.item(),
-#             'classification_loss': class_loss.item()
-#         }

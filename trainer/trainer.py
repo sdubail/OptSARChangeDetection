@@ -57,10 +57,8 @@ class ContrastiveTrainer:
         self.save_best = save_best
         self.log_interval = log_interval
 
-        # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Setup logging
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -100,7 +98,6 @@ class ContrastiveTrainer:
         """Train the model."""
         best_val_loss = float("inf")
 
-        # Metrics tracking
         train_losses = []
         train_losses_pos = []
         train_losses_neg = []
@@ -116,7 +113,9 @@ class ContrastiveTrainer:
                 self.train_loader.sampler.set_epoch(epoch)
 
             # Training
-            train_loss, train_acc, train_loss_pos, train_loss_neg = self._train_epoch(epoch)
+            train_loss, train_acc, train_loss_pos, train_loss_neg = self._train_epoch(
+                epoch
+            )
             train_losses.append(train_loss)
             train_accuracies.append(train_acc)
             train_losses_pos.append(train_loss_pos)
@@ -139,7 +138,6 @@ class ContrastiveTrainer:
                 else:
                     self.scheduler.step()
 
-            # Log training progress
             self.logger.info(
                 f"Epoch {epoch+1}/{self.num_epochs} - "
                 f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, "
@@ -154,11 +152,17 @@ class ContrastiveTrainer:
             elif not self.save_best:
                 self._save_checkpoint(epoch, val_loss, val_acc, is_best=False)
 
-        # Plot training curves
+        # training curves
         self._plot_training_curves(
-            train_losses, val_losses, train_accuracies, val_accuracies, train_losses_pos, train_losses_neg, val_losses_pos, val_losses_neg
+            train_losses,
+            val_losses,
+            train_accuracies,
+            val_accuracies,
+            train_losses_pos,
+            train_losses_neg,
+            val_losses_pos,
+            val_losses_neg,
         )
-        # save training curves as numpy arrays
         np.save(self.output_dir / "train_losses.npy", np.array(train_losses))
         np.save(self.output_dir / "val_losses.npy", np.array(val_losses))
         np.save(self.output_dir / "train_accuracies.npy", np.array(train_accuracies))
@@ -168,8 +172,6 @@ class ContrastiveTrainer:
         np.save(self.output_dir / "val_losses_pos.npy", np.array(val_losses_pos))
         np.save(self.output_dir / "val_losses_neg.npy", np.array(val_losses_neg))
 
-        # Save
-        # log best validation loss
         self.logger.info(
             f"Training completed. Best validation loss: {best_val_loss:.4f}"
         )
@@ -187,7 +189,6 @@ class ContrastiveTrainer:
             self.train_loader, desc=f"Epoch {epoch+1}/{self.num_epochs} - Train"
         ) as pbar:
             for batch_idx, batch in enumerate(pbar):
-                # Move data to device
                 pre_patches = batch["pre_patch"].to(self.device)
                 post_patches = batch["post_patch"].to(self.device)
                 is_positive = batch["is_positive"].to(self.device)
@@ -205,12 +206,10 @@ class ContrastiveTrainer:
                 loss.backward()
                 self.optimizer.step()
 
-                # Update statistics
                 epoch_loss += loss.item()
                 epoch_loss_pos += pos_loss.item()
                 epoch_loss_neg += neg_loss.item()
-                
-                # Call gradient monitor after backward pass (if enabled)
+
                 if self.monitor_gradients:
                     self.gradient_monitor.after_batch(epoch, batch_idx, outputs, loss)
 
@@ -223,7 +222,6 @@ class ContrastiveTrainer:
                     all_preds.extend(predictions.cpu().numpy())
                     all_targets.extend(is_positive.cpu().numpy())
 
-                # Update progress bar
                 pbar.set_postfix(
                     {
                         "loss": loss.item(),
@@ -232,7 +230,6 @@ class ContrastiveTrainer:
                     }
                 )
 
-                # Log batch metrics at intervals
                 if batch_idx % self.log_interval == 0:
                     self.logger.info(
                         f"""Train Batch {batch_idx}/{len(self.train_loader)} 
@@ -241,12 +238,10 @@ class ContrastiveTrainer:
                         - Neg Loss: {neg_loss.item():.4f}"""
                     )
 
-        # Calculate average loss and accuracy
         epoch_loss /= len(self.train_loader)
         epoch_loss_pos /= len(self.train_loader)
         epoch_loss_neg /= len(self.train_loader)
 
-        # Calculate accuracy if we have predictions
         epoch_acc = 0
         if all_preds and all_targets:
             epoch_acc = balanced_accuracy_score(all_targets, all_preds)
@@ -267,7 +262,6 @@ class ContrastiveTrainer:
                 self.val_loader, desc=f"Epoch {epoch+1}/{self.num_epochs} - Val"
             ) as pbar:
                 for batch_idx, batch in enumerate(pbar):
-                    # Move data to device
                     pre_patches = batch["pre_patch"].to(self.device)
                     post_patches = batch["post_patch"].to(self.device)
                     is_positive = batch["is_positive"].to(self.device)
@@ -285,7 +279,7 @@ class ContrastiveTrainer:
                     epoch_loss += loss.item()
                     epoch_loss_pos += pos_loss.item()
                     epoch_loss_neg += neg_loss.item()
-                    
+
                     # Collect predictions for evaluation
                     if "change_score" in outputs:
                         predictions = (
@@ -294,7 +288,6 @@ class ContrastiveTrainer:
                         all_preds.extend(predictions.cpu().numpy())
                         all_targets.extend(is_positive.cpu().numpy())
 
-                    # Update progress bar
                     pbar.set_postfix(
                         {
                             "loss": loss.item(),
@@ -307,7 +300,6 @@ class ContrastiveTrainer:
         epoch_loss /= len(self.val_loader)
         epoch_loss_pos /= len(self.val_loader)
         epoch_loss_neg /= len(self.val_loader)
-        
 
         # Calculate accuracy if we have predictions
         epoch_acc = 0
@@ -359,7 +351,17 @@ class ContrastiveTrainer:
             checkpoint.get("val_acc", None),
         )
 
-    def _plot_training_curves(self, train_losses, val_losses, train_accs, val_accs, train_losses_pos, train_losses_neg, val_losses_pos, val_losses_neg):
+    def _plot_training_curves(
+        self,
+        train_losses,
+        val_losses,
+        train_accs,
+        val_accs,
+        train_losses_pos,
+        train_losses_neg,
+        val_losses_pos,
+        val_losses_neg,
+    ):
         """Plot training curves."""
         plt.figure(figsize=(12, 5))
 
@@ -372,7 +374,6 @@ class ContrastiveTrainer:
         plt.ylabel("Loss")
         plt.legend()
         plt.grid(True)
-        
 
         # Loss curve subterms
         plt.subplot(1, 3, 2)
@@ -387,8 +388,7 @@ class ContrastiveTrainer:
         plt.ylabel("Loss")
         plt.legend()
         plt.grid(True)
-        
-        
+
         # Accuracy curve
         plt.subplot(1, 3, 3)
         plt.plot(train_accs, label="Train Accuracy")

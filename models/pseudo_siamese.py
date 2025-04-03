@@ -43,7 +43,7 @@ class OpticalEncoder(nn.Module):
         if in_channels == 3:
             self.conv1.weight.data = resnet.conv1.weight.data
         else:
-            # Initialize new channels with mean of RGB weights
+            # initialize new channels with mean of RGB weights
             self.conv1.weight.data[:, :3, :, :] = resnet.conv1.weight.data
             if in_channels > 3:
                 for i in range(3, in_channels):
@@ -56,7 +56,7 @@ class OpticalEncoder(nn.Module):
             for param in self.conv1.parameters():
                 param.requires_grad = False
 
-        # Rest of the network
+        # rRest of the network
         self.bn1 = resnet.bn1
         self.relu = resnet.relu
         self.maxpool = resnet.maxpool
@@ -64,12 +64,12 @@ class OpticalEncoder(nn.Module):
         self.layer1 = resnet.layer1
         self.layer2 = resnet.layer2
 
-        # Modify stride in layer3 and layer4
+        # modify stride in layer3 and layer4
         self.layer3 = self._modify_layer_stride(resnet.layer3, stride=1)
         self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
 
         self.avgpool = resnet.avgpool
-        self.feature_dim = 512  # ResNet18 output dimension
+        self.feature_dim = 512
 
     def _modify_layer_stride(self, layer, stride=1):
         """Modify stride of the first block in a ResNet layer."""
@@ -129,7 +129,7 @@ class SAREncoder(nn.Module):
                 if not any(layer in name for layer in ["layer4", "fc"]):
                     param.requires_grad = False
 
-        # Modify first conv layer for input channels
+        # modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
             in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
         )
@@ -153,12 +153,12 @@ class SAREncoder(nn.Module):
         self.layer1 = resnet.layer1
         self.layer2 = resnet.layer2
 
-        # Modify stride in layer3 and layer4
+        # modify stride in layer3 and layer4
         self.layer3 = self._modify_layer_stride(resnet.layer3, stride=1)
         self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
 
         self.avgpool = resnet.avgpool
-        self.feature_dim = 512  # ResNet18 output dimension
+        self.feature_dim = 512
 
     def _modify_layer_stride(self, layer, stride=1):
         """Modify stride of the first block in a ResNet layer."""
@@ -242,8 +242,6 @@ class MultimodalDamageNet(nn.Module):
         self.optical_projector = Projector(self.optical_dim, out_dim=projection_dim)
         self.sar_projector = Projector(self.sar_dim, out_dim=projection_dim)
 
-        # NB. No classifier is needed for pure contrastive learning
-
     def forward(self, optical=None, sar=None):
         result = {}
 
@@ -253,7 +251,6 @@ class MultimodalDamageNet(nn.Module):
             result["optical_features"] = optical_features
             result["optical_projected"] = optical_projected
 
-            # Rename keys for compatibility with patch-based approach
             result["pre_features"] = optical_features
             result["pre_projected"] = optical_projected
 
@@ -263,13 +260,11 @@ class MultimodalDamageNet(nn.Module):
             result["sar_features"] = sar_features
             result["sar_projected"] = sar_projected
 
-            # Rename keys for compatibility with patch-based approach
             result["post_features"] = sar_features
             result["post_projected"] = sar_projected
 
-        # If both inputs are provided, compute change score
         if optical is not None and sar is not None:
-            # Compute change score (cosine similarity between projected features)
+            # Compute change score
             optical_proj_norm = F.normalize(result["optical_projected"], dim=1)
             sar_proj_norm = F.normalize(result["sar_projected"], dim=1)
             similarity = torch.sum(optical_proj_norm * sar_proj_norm, dim=1)

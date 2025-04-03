@@ -6,3 +6,6 @@
 **/output
 .vscode
 **/dfc25_track2_trainval.zip
+**/test_val_images
+**/posloss**
+**/multiloss**

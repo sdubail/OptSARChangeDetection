@@ -1,8 +1,3 @@
-"""
-Change map generator for multimodal change detection.
-This module contains the core functionality to generate change maps from SAR-optical image pairs.
-"""
-
 import logging
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
@@ -12,7 +7,6 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -49,15 +43,14 @@ class PatchDataset(Dataset):
         self.transform = transform
         self.pad_size = (context_patch_size - roi_patch_size) // 2
 
-        # Calculate image dimensions
         self.height, self.width = pre_img.shape[:2]
 
-        # Extract valid patch positions
+        # extract valid patch positions
         self.patch_positions = self._get_patch_positions()
 
     def _get_patch_positions(self) -> List[Tuple[int, int]]:
         """Get all valid patch positions for the image pair."""
-        # Calculate extraction boundaries
+        # extraction boundaries
         start_y = self.pad_size
         start_x = self.pad_size
         end_y = self.height - self.pad_size - self.roi_patch_size + 1
@@ -96,7 +89,6 @@ class PatchDataset(Dataset):
         pre_patch = self.pre_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
         post_patch = self.post_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
 
-        # Apply transforms if any
         if self.transform:
             transformed = self.transform(pre_patch, post_patch)
             pre_patch = transformed["pre_image"]
@@ -114,7 +106,6 @@ class PatchDataset(Dataset):
 
     def _to_tensor_optical(self, img: np.ndarray) -> torch.Tensor:
         """Convert optical image to tensor with normalization."""
-        # Convert to float32
         img = img.astype(np.float32)
 
         # Per-channel normalization
@@ -128,27 +119,23 @@ class PatchDataset(Dataset):
 
     def _to_tensor_sar(self, img: np.ndarray) -> torch.Tensor:
         """Convert SAR image to tensor with appropriate preprocessing."""
-        # Convert to float32
         img = img.astype(np.float32)
 
-        # Check if it's three identical channels (likely repeated grayscale)
         if (
             img.shape[2] == 3
             and np.allclose(img[:, :, 0], img[:, :, 1])
             and np.allclose(img[:, :, 0], img[:, :, 2])
         ):
-            # Extract just one channel
             img = img[:, :, 0:1]
 
-        # Apply log transformation
-        img = np.log1p(img)  # natural log of (1 + x)
+        # log transformation
+        img = np.log1p(img)
 
-        # Normalize each channel
+        # Normalize
         means = img.mean(axis=(0, 1), keepdims=True)
         stds = img.std(axis=(0, 1), keepdims=True) + 1e-8
         img = (img - means) / stds
 
-        # Convert to tensor
         img = torch.from_numpy(img.transpose(2, 0, 1))
         return img
 
@@ -164,29 +151,23 @@ def set_border_to_zero(array, border_width):
     Returns:
         Modified array with borders set to zero
     """
-    # Make a copy to avoid modifying original array
     result = array.copy()
 
-    # Get array dimensions
     if array.ndim == 2:
         h, w = array.shape
 
-        # Set top and bottom borders to zero
         result[:border_width, :] = 0
         result[h - border_width :, :] = 0
 
-        # Set left and right borders to zero
         result[:, :border_width] = 0
         result[:, w - border_width :] = 0
 
     elif array.ndim == 3:
         h, w, c = array.shape
 
-        # Set top and bottom borders to zero
         result[:border_width, :, :] = 0
         result[h - border_width :, :, :] = 0
 
-        # Set left and right borders to zero
         result[:, :border_width, :] = 0
         result[:, w - border_width :, :] = 0
 
@@ -261,13 +242,13 @@ def visualize_damage(
             # Image too small for extraction
             # Return a red "error" image
             rgb = np.zeros((h, w, 3), dtype=np.uint8)
-            rgb[:, :, 0] = 255  # Red channel
+            rgb[:, :, 0] = 255
             return rgb
 
-        # Process each potential patch
+        # Process each patch
         for y in range(start_y, end_y, stride):
             for x in range(start_x, end_x, stride):
-                # Extract ROI from the binary label
+                # Extract ROI
                 roi = label_binary[y : y + roi_patch_size, x : x + roi_patch_size]
 
                 # Calculate damage ratio in this ROI
@@ -288,7 +269,6 @@ def visualize_damage(
                 count_map[y : y + roi_patch_size, x : x + roi_patch_size] += 1
 
         # Average overlapping regions
-        # Avoid division by zero with np.divide
         label_map = np.divide(
             label_map, count_map, out=np.zeros_like(label_map), where=count_map > 0
         )
@@ -297,10 +277,8 @@ def visualize_damage(
         # 0 (negative/damaged) = black, 1 (positive/intact) = white
         rgb = np.zeros((h, w, 3), dtype=np.uint8)
 
-        # Scale to [0, 255] for visualization
         grayscale = (label_map * 255).astype(np.uint8)
 
-        # Copy to all channels for grayscale RGB
         rgb[:, :, 0] = grayscale
         rgb[:, :, 1] = grayscale
         rgb[:, :, 2] = grayscale
@@ -350,7 +328,7 @@ def create_change_map(
     device: str = "cuda",
     batch_size: int = 64,
     num_workers: int = 4,
-    window_method: str = "dome", # classic or dome
+    window_method: str = "dome",  # classic or dome
     window_power: float = 1.5,
 ) -> np.ndarray:
     """
@@ -368,12 +346,10 @@ def create_change_map(
     Returns:
         A change map with the same spatial dimensions as the input images
     """
-    # Get patch parameters from config
     roi_patch_size = config.get("roi_patch_size", 16)
     context_patch_size = config.get("context_patch_size", 256)
     stride = config.get("patch_stride", 8)
 
-    # Switch model to evaluation mode
     model.eval()
 
     # Create dataset and dataloader for patches
@@ -407,7 +383,6 @@ def create_change_map(
     # Process patches in batches
     with torch.no_grad():
         for batch in tqdm(patch_loader, desc="Generating change map"):
-            # Move data to device
             pre_patches = batch["pre_patch"].to(device)
             post_patches = batch["post_patch"].to(device)
             positions = batch["position"]
@@ -418,12 +393,6 @@ def create_change_map(
             # Get change scores
             if "change_score" in outputs:
                 change_scores = outputs["change_score"].cpu().numpy()
-            # else:
-            #     # If model doesn't provide change_score directly, compute from projections
-            #     optical_proj = F.normalize(outputs["pre_projected"], dim=1)
-            #     sar_proj = F.normalize(outputs["post_projected"], dim=1)
-            #     similarity = torch.sum(optical_proj * sar_proj, dim=1)
-            #     change_scores = (1.0 - similarity).cpu().numpy()
 
             # Accumulate change scores to the change map
 
@@ -499,52 +468,3 @@ def compute_iou(
     )
 
     return iou, precision, recall
-
-
-def visualize_change_map(
-    change_map: np.ndarray, threshold: float = 0.5, output_path: Union[str, Path] = None
-) -> np.ndarray:
-    """
-    Create a visualization of the change map.
-
-    Args:
-        change_map: Change map to visualize
-        threshold: Threshold for change detection
-        output_path: Path to save the visualization (optional)
-
-    Returns:
-        RGB visualization image
-    """
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap
-
-    # Create a custom colormap (blue to red)
-    colors = [(0, 0, 1), (1, 1, 1), (1, 0, 0)]  # Blue -> White -> Red
-    cmap = LinearSegmentedColormap.from_list("change_cmap", colors, N=256)
-
-    # Normalize change map to [0, 1] for visualization
-    vmin, vmax = 0, 1
-
-    # Plot continuous change map
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    im1 = axes[0].imshow(change_map, cmap=cmap, vmin=vmin, vmax=vmax)
-    axes[0].set_title("Change Intensity")
-    plt.colorbar(im1, ax=axes[0])
-    axes[0].axis("off")
-
-    # Plot binary change map
-    binary_map = (change_map > threshold).astype(np.uint8)
-    im2 = axes[1].imshow(binary_map, cmap="gray")
-    axes[1].set_title(f"Binary Change (threshold={threshold:.2f})")
-    axes[1].axis("off")
-
-    # Save if output path is provided
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
-
-    # Return RGB visualization
-    fig.canvas.draw()
-    vis_img = np.array(fig.canvas.renderer.buffer_rgba())[:, :, :3]
-
-    return vis_img

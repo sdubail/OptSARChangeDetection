@@ -29,23 +29,22 @@ class GradientMonitor:
 
         self.logger = logging.getLogger("GradientMonitor")
 
-        # History for metrics
         self.history = {
             "epoch": [],
             "batch": [],
-            "layer_grad_norms": {},  # Average gradient norms by layer
-            "layer_activations": {},  # Average activations by layer
-            "optical_feature_stats": [],  # Statistics of optical features
-            "sar_feature_stats": [],  # Statistics of SAR features
-            "projection_stats": [],  # Statistics of projections
-            "similarity_stats": [],  # Statistics of similarities
+            "layer_grad_norms": {},
+            "layer_activations": {},
+            "optical_feature_stats": [],
+            "sar_feature_stats": [],
+            "projection_stats": [],
+            "similarity_stats": [],
         }
 
         # Hook registry
         self.grad_hooks = []
         self.activation_hooks = []
 
-        # Important layers to track (adapt according to your model)
+        # Important layers to track
         self.tracked_modules = [
             ("optical_encoder.layer2", "Optical Encoder (Layer 2)"),
             ("sar_encoder.layer2", "SAR Encoder (Layer 2)"),
@@ -59,17 +58,14 @@ class GradientMonitor:
             ("sar_projector.layer2.0", "SAR Projector Output"),
         ]
 
-        # Dictionaries to temporarily store values from current batch
         self.current_grads = {}
         self.current_activations = {}
 
-        # Initialize tracking
         self.setup_hooks()
 
     def setup_hooks(self):
         """Configure hooks on layers to track"""
         for module_name, _ in self.tracked_modules:
-            # Parse module name to access the sub-layer
             parts = module_name.split(".")
             module = self.model
             for part in parts:
@@ -97,7 +93,6 @@ class GradientMonitor:
                 module.register_full_backward_hook(get_gradient_hook(module_name))
             )
 
-            # Initialize entries in history
             self.history["layer_grad_norms"][module_name] = []
             self.history["layer_activations"][module_name] = []
 
@@ -111,11 +106,9 @@ class GradientMonitor:
             outputs: Model outputs
             loss: Loss value
         """
-        # Only process at regular intervals to avoid slowing down training
         if batch_idx % self.log_interval != 0:
             return
 
-        # Record epoch and batch
         self.history["epoch"].append(epoch)
         self.history["batch"].append(batch_idx)
 
@@ -127,7 +120,6 @@ class GradientMonitor:
                 grad_norm = grad.norm(2, dim=1).mean().item()
                 self.history["layer_grad_norms"][module_name].append(grad_norm)
 
-                # Check if NaN or Inf are present
                 if torch.isnan(grad).any() or torch.isinf(grad).any():
                     self.logger.warning(
                         f"NaN/Inf gradients detected in {module_name} at epoch {epoch}, batch {batch_idx}"
@@ -141,7 +133,6 @@ class GradientMonitor:
                 act_mean = activation.abs().mean().item()
                 self.history["layer_activations"][module_name].append(act_mean)
 
-                # Check if NaN or Inf are present
                 if torch.isnan(activation).any() or torch.isinf(activation).any():
                     self.logger.warning(
                         f"NaN/Inf activations detected in {module_name} at epoch {epoch}, batch {batch_idx}"
@@ -205,17 +196,14 @@ class GradientMonitor:
 
     def generate_visualizations(self, epoch, batch_idx):
         """Generates and saves visualizations"""
-        # 1. Visualize the evolution of gradient norms
+
         self._plot_grad_norms(epoch, batch_idx)
 
-        # 2. Visualize the evolution of activations
         self._plot_activations(epoch, batch_idx)
 
-        # 3. Visualize the distributions of features and projections
         if len(self.history["optical_feature_stats"]) > 0:
             self._plot_feature_stats(epoch, batch_idx)
 
-        # 4. Visualize the distributions of similarities
         if len(self.history["similarity_stats"]) > 0:
             self._plot_similarity_stats(epoch, batch_idx)
 
@@ -264,7 +252,6 @@ class GradientMonitor:
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
 
-        # Save the image
         plt.savefig(self.output_dir / f"activations_e{epoch}_b{batch_idx}.png")
         plt.close()
 
@@ -272,7 +259,6 @@ class GradientMonitor:
         """Visualizes statistics of features and projections"""
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
-        # Evolution of optical feature statistics
         ax = axes[0, 0]
         opt_means = [s["mean"] for s in self.history["optical_feature_stats"]]
         opt_stds = [s["std"] for s in self.history["optical_feature_stats"]]
@@ -292,7 +278,6 @@ class GradientMonitor:
         ax.legend()
         ax.grid(True, alpha=0.3)
 
-        # Evolution of SAR feature statistics
         ax = axes[0, 1]
         sar_means = [s["mean"] for s in self.history["sar_feature_stats"]]
         sar_stds = [s["std"] for s in self.history["sar_feature_stats"]]
@@ -311,7 +296,6 @@ class GradientMonitor:
         ax.legend()
         ax.grid(True, alpha=0.3)
 
-        # Evolution of projection norms
         if len(self.history["projection_stats"]) > 0:
             ax = axes[1, 0]
             opt_norms = [s["optical_norm"] for s in self.history["projection_stats"]]
@@ -325,7 +309,6 @@ class GradientMonitor:
             ax.legend()
             ax.grid(True, alpha=0.3)
 
-        # Latest cosine similarity distribution
         if len(self.history["similarity_stats"]) > 0:
             ax = axes[1, 1]
             sim_means = [s["mean"] for s in self.history["similarity_stats"]]
@@ -359,17 +342,13 @@ class GradientMonitor:
             return
 
         plt.figure(figsize=(10, 6))
-        recent_stats = self.history["similarity_stats"][
-            -1
-        ]  # Take the most recent stats
+        recent_stats = self.history["similarity_stats"][-1]
 
-        # Create a synthetic histogram based on mean and standard deviation
         mean = recent_stats["mean"]
         std = recent_stats["std"]
         min_val = recent_stats["min"]
         max_val = recent_stats["max"]
 
-        # Generate a normal distribution with these stats for visualization
         x = np.linspace(min_val - 0.5, max_val + 0.5, 100)
         y = np.exp(-0.5 * ((x - mean) / std) ** 2) / (std * np.sqrt(2 * np.pi))
 

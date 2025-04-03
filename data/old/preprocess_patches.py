@@ -1,8 +1,3 @@
-""" 
-Extract and save patches for contrastive learning with context.
-This script processes images from a dataset, extracts patches, and saves them in HDF5 format for efficient training and validation.
-"""
-
 import argparse
 import json
 import logging
@@ -16,7 +11,6 @@ import torch
 import yaml
 from tqdm import tqdm
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -238,12 +232,10 @@ def extract_and_save_patches(
         f"  Image {image_id}: Found {num_pos} positive and {num_neg} negative patches"
     )
 
-    # Balance dataset within each image if needed
     total_samples = min(num_pos + num_neg, max_pairs_per_image)
     target_pos = int(total_samples * balance_ratio)
     target_neg = total_samples - target_pos
 
-    # Adjust targets if there are not enough samples
     if target_pos > num_pos:
         target_pos = num_pos
         target_neg = min(total_samples - target_pos, num_neg)
@@ -252,14 +244,12 @@ def extract_and_save_patches(
         target_neg = num_neg
         target_pos = min(total_samples - target_neg, num_pos)
 
-    # Randomly shuffle and select the target number of patches
     random.shuffle(positive_patches)
     random.shuffle(negative_patches)
 
     pos_selected = positive_patches[:target_pos]
     neg_selected = negative_patches[:target_neg]
 
-    # Split into train and validation sets
     pos_train_count = int(len(pos_selected) * train_ratio)
     neg_train_count = int(len(neg_selected) * train_ratio)
 
@@ -268,11 +258,9 @@ def extract_and_save_patches(
     neg_train = neg_selected[:neg_train_count]
     neg_val = neg_selected[neg_train_count:]
 
-    # Get current dataset sizes
     train_size = train_h5["pre_patches"].shape[0]
     val_size = val_h5["pre_patches"].shape[0]
 
-    # Add to training set
     num_train_pos = len(pos_train)
     num_train_neg = len(neg_train)
     train_patches = pos_train + neg_train
@@ -373,28 +361,22 @@ def preprocess_patches(config, output_dir, train_ratio=0.8, limit=None, seed=42)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Set random seed
     random.seed(seed)
     np.random.seed(seed)
 
-    # Get parameters from config
     roi_patch_size = config.get("roi_patch_size", 64)
     context_patch_size = config.get("context_patch_size", 256)
 
-    # Create simple dataset loader
     dataset = SimpleDatasetLoader(
         root_dir=config["data"]["root_dir"], split="train", limit=limit
     )
 
-    # Initialize HDF5 files with extendable datasets
     train_h5_path = output_dir / "train_patches.h5"
     val_h5_path = output_dir / "val_patches.h5"
 
-    # Create HDF5 files with resizable datasets
     with h5py.File(train_h5_path, "w") as train_h5, h5py.File(
         val_h5_path, "w"
     ) as val_h5:
-        # Create extendable datasets for training
         train_h5.create_dataset(
             "pre_patches",
             shape=(0, context_patch_size, context_patch_size, 3),
@@ -429,7 +411,6 @@ def preprocess_patches(config, output_dir, train_ratio=0.8, limit=None, seed=42)
             dtype="bool",
         )
 
-        # Create extendable datasets for validation (same structure)
         val_h5.create_dataset(
             "pre_patches",
             shape=(0, context_patch_size, context_patch_size, 3),
@@ -464,17 +445,14 @@ def preprocess_patches(config, output_dir, train_ratio=0.8, limit=None, seed=42)
             dtype="bool",
         )
 
-        # Prepare metadata lists
         train_metadata = []
         val_metadata = []
 
-        # Track statistics
         total_train_pos = 0
         total_train_neg = 0
         total_val_pos = 0
         total_val_neg = 0
 
-        # Process each image
         for i in tqdm(range(len(dataset)), desc="Processing images"):
             sample = dataset[i]
             image_id = sample["image_id"]

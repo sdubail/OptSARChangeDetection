@@ -1,12 +1,3 @@
-"""
-Pre-process satellite image dataset by extracting patches for contrastive learning.
-This script extracts patch pairs from the training dataset, classifies them as positive
-(no change) or negative (with change), and splits them into train and validation sets.
-
-Stored in two separate h5 files (train, val). Very temporary until we agree on a
-definitive data management solution.
-"""
-
 import argparse
 import json
 import logging
@@ -20,7 +11,6 @@ import torch
 import yaml
 from tqdm import tqdm
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -111,14 +101,14 @@ class PatchExtractor:
 
     def __init__(
         self,
-        roi_patch_size=64,  # Size of the actual region of interest
-        context_patch_size=256,  # Size of the context window
-        stride=32,  # Stride for extraction
-        pos_threshold=0.05,  # Maximum damage ratio for positive pairs
-        min_valid_pixels=0.8,  # Minimum ratio of valid pixels needed
-        balance_ratio=0.5,  # Target ratio of positive samples
-        max_pairs_per_image=500,  # Maximum number of pairs to extract per image
-        random_seed=42,  # Random seed for reproducibility
+        roi_patch_size=64,
+        context_patch_size=256,
+        stride=32,
+        pos_threshold=0.05,
+        min_valid_pixels=0.8,
+        balance_ratio=0.5,
+        max_pairs_per_image=500,
+        random_seed=42,
     ):
         self.roi_patch_size = roi_patch_size
         self.context_patch_size = context_patch_size
@@ -129,7 +119,6 @@ class PatchExtractor:
         self.max_pairs_per_image = max_pairs_per_image
         self.random_seed = random_seed
 
-        # Calculate the padding needed to center the ROI in the context window
         self.pad_size = (context_patch_size - roi_patch_size) // 2
 
         random.seed(random_seed)
@@ -139,13 +128,12 @@ class PatchExtractor:
         """Extract patches from image triplet with context, skipping boundaries."""
         h, w = pre_img.shape[:2]
 
-        # Calculate valid extraction region considering context padding
         start_y = self.pad_size
         start_x = self.pad_size
         end_y = h - self.pad_size - self.roi_patch_size + 1
         end_x = w - self.pad_size - self.roi_patch_size + 1
 
-        # Check if we have valid region to extract from
+        #
         if start_y >= end_y or start_x >= end_x:
             logger.warning(
                 f"Image too small for extraction with current parameters: {h}x{w}"
@@ -155,13 +143,11 @@ class PatchExtractor:
         patches = []
         for y in range(start_y, end_y, self.stride):
             for x in range(start_x, end_x, self.stride):
-                # Extract full-sized context patch
                 ctx_y_start = y - self.pad_size
                 ctx_x_start = x - self.pad_size
                 ctx_y_end = y + self.roi_patch_size + self.pad_size
                 ctx_x_end = x + self.roi_patch_size + self.pad_size
 
-                # Extract patches
                 pre_context = pre_img[
                     ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end
                 ].copy()
@@ -169,7 +155,6 @@ class PatchExtractor:
                     ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end
                 ].copy()
 
-                # Extract ROI for labeling
                 label_roi = np.zeros(
                     (self.context_patch_size, self.context_patch_size, 1),
                     dtype=label.dtype,
@@ -178,13 +163,11 @@ class PatchExtractor:
                     y : y + self.roi_patch_size, x : x + self.roi_patch_size
                 ].copy()
 
-                # Place the ROI label in the center of the zero-padded context-sized label
                 label_roi[
                     self.pad_size : self.pad_size + self.roi_patch_size,
                     self.pad_size : self.pad_size + self.roi_patch_size,
                 ] = roi_label_data
 
-                # Verify the dimensions are as expected
                 assert (
                     pre_context.shape[0] == self.context_patch_size
                 ), f"Context height mismatch: {pre_context.shape[0]} != {self.context_patch_size}"
@@ -192,7 +175,6 @@ class PatchExtractor:
                     pre_context.shape[1] == self.context_patch_size
                 ), f"Context width mismatch: {pre_context.shape[1]} != {self.context_patch_size}"
 
-                # Check if patch is valid (contains enough valid pixels in ROI)
                 valid_mask = ~np.isnan(
                     pre_img[y : y + self.roi_patch_size, x : x + self.roi_patch_size]
                 ).any(axis=2) & ~np.isnan(
@@ -203,20 +185,15 @@ class PatchExtractor:
                 if valid_ratio < self.min_valid_pixels:
                     continue
 
-                # Calculate damage ratio based only on the ROI
                 if label_roi.ndim > 2:
                     label_roi_flat = label_roi.squeeze()
                 else:
                     label_roi_flat = label_roi
 
-                # Skip patches with only NaN or invalid values
                 if np.isnan(label_roi_flat).all() or (label_roi_flat == 0).all():
                     continue
 
-                # Calculate damage ratio
-                label_patch_flat_binary = np.where(
-                    label_roi_flat > 1, 1, 0
-                )  # Binary damage: >1 is damaged
+                label_patch_flat_binary = np.where(label_roi_flat > 1, 1, 0)
                 damage_pixels = np.sum(label_patch_flat_binary > 0)
                 total_valid_pixels = np.sum(~np.isnan(label_roi_flat))
 
@@ -225,7 +202,6 @@ class PatchExtractor:
 
                 damage_ratio = damage_pixels / total_valid_pixels
 
-                # Determine if positive or negative sample
                 is_positive = damage_ratio <= self.pos_threshold
 
                 patches.append(
@@ -234,7 +210,7 @@ class PatchExtractor:
                         "post_patch": post_context,
                         "label": label_roi,
                         "is_positive": is_positive,
-                        "position": (y, x),  # Original position in the full image
+                        "position": (y, x),
                         "damage_ratio": damage_ratio,
                     }
                 )
@@ -243,7 +219,6 @@ class PatchExtractor:
 
     def create_balanced_dataset(self, patches):
         """Create a balanced dataset with desired ratio of positive samples."""
-        # Separate positive and negative samples
         pos_patches = [p for p in patches if p["is_positive"]]
         neg_patches = [p for p in patches if not p["is_positive"]]
 
@@ -260,7 +235,6 @@ class PatchExtractor:
         target_pos = int(total_samples * self.balance_ratio)
         target_neg = total_samples - target_pos
 
-        # Adjust if needed
         if target_pos > len(pos_patches):
             target_pos = len(pos_patches)
             target_neg = min(total_samples - target_pos, len(neg_patches))
@@ -292,7 +266,6 @@ def save_patches_hdf5(output_dir, split, patches, config):
 
     logger.info(f"Saving {total_patches} patches to {h5_path}")
 
-    # Create a list to store metadata
     metadata = []
 
     with h5py.File(h5_path, "w") as hf:
@@ -350,11 +323,9 @@ def save_patches_hdf5(output_dir, split, patches, config):
                 }
             )
 
-    # Save metadata JSON
     with open(output_dir / f"{split}_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Save summary statistics
     pos_count = sum(1 for p in metadata if p["is_positive"])
     neg_count = sum(1 for p in metadata if not p["is_positive"])
 
@@ -452,19 +423,15 @@ def split_metadata(all_metadata, train_ratio=0.8, balance_ratio=0.5, random_seed
     # Set random seed for reproducibility
     random.seed(random_seed)
 
-    # Separate positive and negative samples
     pos_metadata = [m for m in all_metadata if m["is_positive"]]
     neg_metadata = [m for m in all_metadata if not m["is_positive"]]
 
-    # Shuffle both lists
     random.shuffle(pos_metadata)
     random.shuffle(neg_metadata)
 
-    # Calculate split indices
     pos_train_count = int(len(pos_metadata) * train_ratio)
     neg_train_count = int(len(neg_metadata) * train_ratio)
 
-    # Split positive and negative metadata
     pos_train = pos_metadata[:pos_train_count]
     pos_val = pos_metadata[pos_train_count:]
     neg_train = neg_metadata[:neg_train_count]
@@ -504,7 +471,6 @@ def create_final_datasets(
     # Process training set
     _create_final_dataset(temp_dir, output_dir, train_metadata, "train", patch_config)
 
-    # Process validation set
     _create_final_dataset(temp_dir, output_dir, val_metadata, "val", patch_config)
 
 
@@ -523,13 +489,11 @@ def _create_final_dataset(temp_dir, output_dir, metadata, split, patch_config=No
         logger.warning(f"No metadata for {split} split!")
         return
 
-    # Get sample patch to determine dimensions
     sample_batch_file = next(Path(temp_dir).glob("batch_*.h5"))
     with h5py.File(sample_batch_file, "r") as sample_f:
         patch_shape = sample_f["pre_patches"].shape
         patch_size = patch_shape[1]
 
-    # Create final HDF5 file
     h5_path = output_dir / f"{split}_patches.h5"
     logger.info(f"Creating final {split} dataset with {len(metadata)} patches")
 
@@ -568,12 +532,10 @@ def _create_final_dataset(temp_dir, output_dir, metadata, split, patch_config=No
             batch_num = meta["batch"]
             idx_in_batch = meta["index_in_batch"]
 
-            # Open batch file if not already open
             if batch_num not in batch_files:
                 batch_file = temp_dir / f"batch_{batch_num}.h5"
                 batch_files[batch_num] = h5py.File(batch_file, "r")
 
-            # Copy data from batch file to final file
             hf["pre_patches"][idx] = batch_files[batch_num]["pre_patches"][idx_in_batch]
             hf["post_patches"][idx] = batch_files[batch_num]["post_patches"][
                 idx_in_batch
@@ -601,7 +563,6 @@ def _create_final_dataset(temp_dir, output_dir, metadata, split, patch_config=No
     with open(output_dir / f"{split}_metadata.json", "w") as f:
         json.dump(cleaned_metadata, f, indent=2)
 
-    # Save summary statistics
     pos_count = sum(1 for m in metadata if m["is_positive"])
     neg_count = len(metadata) - pos_count
 

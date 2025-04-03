@@ -12,33 +12,25 @@ logs = open(path).read()
 train_pattern = r"Train:.*?loss=(\d+\.\d+)"
 val_pattern = r"Val:.*?loss=(\d+\.\d+)"
 
-# Extract loss values
 train_loss_values = re.findall(train_pattern, logs)
 val_loss_values = re.findall(val_pattern, logs)
 
-# Convert strings to floats
 train_loss_values = [float(val) for val in train_loss_values]
 val_loss_values = [float(val) for val in val_loss_values]
 
-# Convert your loss values to pandas Series
 s_train = pd.Series(train_loss_values)
 s_val = pd.Series(val_loss_values) if val_loss_values else None
 
-# Calculate rolling mean and std with a window of 20
 window = 20
 
-# For training loss
 rolling_mean_train = s_train.rolling(window, center=True).mean()
 rolling_std_train = s_train.rolling(window, center=True).std()
 
-# For the first and last few points where rolling calculation gives NaN
 rolling_mean_train = rolling_mean_train.fillna(s_train)
 rolling_std_train = rolling_std_train.fillna(s_train.std())
 
-# Create a figure with subplots
 fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
-# Plot training loss on first subplot
 axes[0].plot(rolling_mean_train, linewidth=2, color="blue", label="Rolling Mean")
 axes[0].fill_between(
     range(len(s_train)),
@@ -53,7 +45,6 @@ axes[0].set_ylabel("Loss")
 axes[0].legend()
 axes[0].grid(True)
 
-# Plot validation loss on second subplot if it exists
 if s_val is not None and len(s_val) > 0:
     rolling_mean_val = s_val.rolling(window, center=True).mean()
     rolling_std_val = s_val.rolling(window, center=True).std()
@@ -87,8 +78,6 @@ axes[1].set_ylabel("Loss")
 axes[1].legend()
 axes[1].grid(True)
 
-# Add space between subplots
 plt.tight_layout()
 
-# Save the figure
 plt.savefig(path.with_suffix(".png"), dpi=300)
