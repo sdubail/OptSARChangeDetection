@@ -1,10 +1,3 @@
-""" 
-Instead of extracting all patches in advance, we adopt an on-the-fly extraction approach to optimize memory usage.
-We first index all potential patch locations and their corresponding labels, creating metadata files that store the
-image ID, position, and damage ratio for each potential patch.
-During training, we load these indices and extract patches on demand. 
-"""
-# data/dataset_onthefly_numpy.py
 import json
 import logging
 import os
@@ -168,7 +161,7 @@ class OnTheFlyPatchDataset(Dataset):
 
     def __getitem__(self, idx):
         """Get a patch by extracting it from the original image."""
-        metadata_idx = idx  
+        metadata_idx = idx
 
         # Get metadata for this patch
         image_id = self.image_ids[metadata_idx]
