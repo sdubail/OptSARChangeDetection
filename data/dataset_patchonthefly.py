@@ -59,26 +59,25 @@ class OnTheFlyPatchDataset(Dataset):
         else:
             print("No building presence data indexed.")
             self.has_building = None
-        # Load positive and negative indices separately
+        # load positive and negative indices separately
         positive_indices = np.load(self.metadata_dir / f"{split}_positive_indices.npy")
         negative_indices = np.load(self.metadata_dir / f"{split}_negative_indices.npy")
 
-        # Load summary for stats
+        # load summary for stats
         with open(self.metadata_dir / f"{split}_summary.json", "r") as f:
             self.summary = json.load(f)
 
-        # Set random seed
         np.random.seed(seed)
 
-        # Compute the actual dataset size based on subset_fraction
+        # compute the actual dataset size based on subset_fraction
         total_size = int(len(self.image_ids) * subset_fraction)
 
         if target_neg_ratio is not None:
-            # Compute target negative and positive counts
+            # compute target negative and positive counts
             target_neg_count = int(total_size * target_neg_ratio)
             target_pos_count = total_size - target_neg_count
 
-            # Adjust counts if we don't have enough samples
+            # adjust counts if we don't have enough samples
             if target_neg_count > len(negative_indices):
                 target_neg_count = len(negative_indices)
                 target_pos_count = total_size - target_neg_count
@@ -90,7 +89,7 @@ class OnTheFlyPatchDataset(Dataset):
             target_neg_count = int(total_size * (1 - self.summary["positive_ratio"]))
             target_pos_count = total_size - target_neg_count
 
-        # Select samples
+        # slect samples
         self.selected_pos_indices = np.random.choice(
             positive_indices, size=target_pos_count, replace=False
         )
@@ -98,16 +97,13 @@ class OnTheFlyPatchDataset(Dataset):
             negative_indices, size=target_neg_count, replace=False
         )
 
-        # Combine and shuffle
         self.indices = np.concatenate(
             [self.selected_pos_indices, self.selected_neg_indices]
         )
         np.random.shuffle(self.indices)
 
-        # Image cache
         self.image_cache = {}
 
-        # Log dataset info
         logger.info(
             f"Loaded {split} dataset with {len(self.indices)} patches "
             f"({target_pos_count} positive, {target_neg_count} negative)"
@@ -123,7 +119,6 @@ class OnTheFlyPatchDataset(Dataset):
         if image_id in self.image_cache:
             return self.image_cache[image_id]
 
-        # Load pre-event and post-event images (no label needed for training)
         pre_path = (
             self.root_dir
             / SPLIT_DATA[self.split]
@@ -137,7 +132,6 @@ class OnTheFlyPatchDataset(Dataset):
             / f"{image_id}_post_disaster.tif"
         )
 
-        # Load with rasterio
         with rasterio.open(str(pre_path)) as src:
             pre_img = np.stack(
                 [src.read(i + 1) for i in range(min(3, src.count))], axis=2
@@ -148,12 +142,9 @@ class OnTheFlyPatchDataset(Dataset):
                 [src.read(i + 1) for i in range(min(3, src.count))], axis=2
             )
 
-        # Store in cache
         self.image_cache[image_id] = (pre_img, post_img)
 
-        # Limit cache size
         if len(self.image_cache) > self.cache_size:
-            # Remove least recently used item
             lru_key = next(iter(self.image_cache))
             del self.image_cache[lru_key]
 
@@ -163,7 +154,7 @@ class OnTheFlyPatchDataset(Dataset):
         """Get a patch by extracting it from the original image."""
         metadata_idx = idx
 
-        # Get metadata for this patch
+        # metadata for this patch
         image_id = self.image_ids[metadata_idx]
         roi_y, roi_x = self.roi_positions[metadata_idx]
         ctx_y_start, ctx_x_start, ctx_y_end, ctx_x_end = self.context_positions[
@@ -172,20 +163,17 @@ class OnTheFlyPatchDataset(Dataset):
         is_positive = self.is_positive[metadata_idx]
         damage_ratio = self.damage_ratios[metadata_idx]
 
-        # Load images (from cache if available)
         pre_img, post_img = self._load_image(image_id)
 
-        # Extract patches from context coordinates
+        # get the patches from context coordinates
         pre_patch = pre_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
         post_patch = post_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
 
-        # Apply transforms if any
         if self.transform:
             transformed = self.transform(pre_patch, post_patch)
             pre_patch = transformed["pre_image"]
             post_patch = transformed["post_image"]
 
-        # Convert to tensor
         pre_patch = self._to_tensor_optical(pre_patch)
         post_patch = self._to_tensor_sar(post_patch)
 
@@ -206,47 +194,39 @@ class OnTheFlyPatchDataset(Dataset):
 
     def _to_tensor_optical(self, img):
         """Convert optical image to tensor with normalization."""
-        # Convert to float32
         img = img.astype(np.float32)
 
-        # Per-channel normalization
+        # normalization
         means = img.mean(axis=(0, 1), keepdims=True)
         stds = img.std(axis=(0, 1), keepdims=True) + 1e-8
         img = (img - means) / stds
 
-        # Convert to tensor with channel-first format
         img = torch.from_numpy(img.transpose(2, 0, 1))
         return img
 
     def _to_tensor_sar(self, img):
         """Convert SAR image to tensor with appropriate preprocessing."""
-        # Convert to float32
         img = img.astype(np.float32)
 
-        # Check if it's three identical channels (likely repeated grayscale)
         if (
             img.shape[2] == 3
             and np.allclose(img[:, :, 0], img[:, :, 1])
             and np.allclose(img[:, :, 0], img[:, :, 2])
         ):
-            # Extract just one channel
             img = img[:, :, 0:1]
 
-        # Apply log transformation
-        img = np.log1p(img)  # natural log of (1 + x)
+        img = np.log1p(img)
 
-        # Normalize each channel
+        # normalize
         means = img.mean(axis=(0, 1), keepdims=True)
         stds = img.std(axis=(0, 1), keepdims=True) + 1e-8
         img = (img - means) / stds
 
-        # Convert to tensor
         img = torch.from_numpy(img.transpose(2, 0, 1))
         return img
 
     def get_pos_neg_ratio(self):
         """Get ratio of positive to negative samples in the dataset."""
-        # Count actual positives in the sampled dataset
         pos_count = np.sum(self.is_positive[self.indices])
         total = len(self.indices)
         return float(pos_count) / total if total > 0 else 0

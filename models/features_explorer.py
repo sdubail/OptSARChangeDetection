@@ -21,7 +21,6 @@ from models.pseudo_siamese import (
     MultimodalDamageNet,
 )
 
-# Import UMAP
 try:
     import umap.umap_ as umap
 
@@ -35,10 +34,8 @@ except ImportError:
     print("Continuing without UMAP support...")
 
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tqdm import tqdm
 
-# matplotlib configuration for figures of presentation and report
 plt.rcParams.update(
     {
         "font.size": 12,
@@ -94,7 +91,7 @@ class ModelVisualizer:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True, parents=True)
 
-        # Create empty lists to store features and labels
+        # empty lists to store features and labels
         self.sar_features = []
         self.optical_features = []
         self.sar_projected = []
@@ -113,7 +110,7 @@ class ModelVisualizer:
         self.model.eval()
 
         print("\nCollecting features...")
-        # Iterate through the dataloader and collect features
+        # iterate through the dataloader and collect features
         with torch.no_grad():
             with tqdm(self.dataloader) as pbar:
                 for _, batch in enumerate(pbar):
@@ -122,10 +119,9 @@ class ModelVisualizer:
                     is_positive = batch["is_positive"].to(self.device)
                     has_building = batch["has_building"].to(self.device)
 
-                    # Forward pass
                     outputs = self.model(optical=pre_patches, sar=post_patches)
 
-                    # Store features and labels
+                    # store features and labels
                     self.sar_features.append(outputs["sar_features"].cpu().numpy())
                     self.optical_features.append(
                         outputs["optical_features"].cpu().numpy()
@@ -709,7 +705,6 @@ class ModelVisualizer:
 
 
 def main():
-    # Make the UMAP_AVAILABLE flag accessible in this function
     global UMAP_AVAILABLE
 
     parser = argparse.ArgumentParser(description="Visualize model outputs")
@@ -771,7 +766,6 @@ def main():
     parser.add_argument(
         "--umap_metric", type=str, default="euclidean", help="Distance metric for UMAP"
     )
-    # Ajout du nouveau paramètre pour contrôler l'affichage du titre
     parser.add_argument(
         "--add_title_in_plot",
         action="store_true",
@@ -838,7 +832,6 @@ def main():
         with open(args.config, "r") as f:
             config_data = yaml.safe_load(f)
 
-    # Check if CUDA is available and set device to cpu if not
     if args.device == "cuda" and not torch.cuda.is_available():
         print("CUDA not available, using CPU instead")
         args.device = "cpu"
@@ -854,7 +847,6 @@ def main():
         sar_channels=config["model"]["sar_channels"],
         projection_dim=config["model"]["projection_dim"],
     )
-    # Try loading with explicit weights_only=False
     checkpoint = torch.load(
         args.model_path, map_location=args.device, weights_only=False
     )
@@ -901,11 +893,9 @@ def main():
     )
     visualizer.collect_features()
 
-    # Check if UMAP is available when specified
     if args.use_umap and not UMAP_AVAILABLE:
         print("Warning: UMAP visualization requested but UMAP is not installed.")
 
-    # Set UMAP parameters if specified and available
     if args.use_umap and UMAP_AVAILABLE:
         visualizer._apply_dimension_reduction = (
             lambda data,

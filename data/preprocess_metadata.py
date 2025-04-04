@@ -1,4 +1,4 @@
-""" 
+"""
 A code to process metadata for a dataset containing pre-event optical images, post-event SAR images, and damage labels.
 The script extracts patches from the images, calculates damage ratios, and saves the metadata for training and validation splits.
 It also includes options for limiting the number of images processed, selecting specific disasters, and excluding blacklisted images.
@@ -6,6 +6,7 @@ It also includes options for limiting the number of images processed, selecting 
 The metadata includes information about the image ID, ROI positions, context positions, positive/negative flags, damage ratios, and building presence.
 Metadata acts as an index for the dataset, allowing for efficient loading of patches during training.
 """
+
 # data/preprocess_metadata_numpy.py
 import argparse
 import json
@@ -18,7 +19,6 @@ import torch
 import yaml
 from tqdm import tqdm
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -49,7 +49,7 @@ class SimpleDatasetLoader:
         self.split = split
         self.limit = limit
         blacklist = np.loadtxt(blacklist_path, dtype=str, delimiter=",")[:, 0]
-        # Get list of image names
+        # list of image names
         post_event_dir = self.root_dir / split / "post-event"
 
         self.image_ids = [
@@ -85,9 +85,8 @@ class SimpleDatasetLoader:
     def get_by_image_id(self, image_id):
         """Get a sample by image ID."""
         try:
-            # Find the index of the image with the given ID
+            # find the index of the image with the given ID
             idx = self.image_ids.index(image_id)
-            # Return the item at that index
             return self[idx]
         except ValueError:
             raise ValueError(f"Image ID '{image_id}' not found in the dataset")
@@ -96,7 +95,7 @@ class SimpleDatasetLoader:
         """Get a pre-event optical, post-event SAR, and damage label triplet."""
         image_id = self.image_ids[idx]
 
-        # Load pre-event optical image (RGB)
+        # load pre-event optical image (RGB)
         pre_path = (
             self.root_dir / self.split / "pre-event" / f"{image_id}_pre_disaster.tif"
         )
@@ -104,17 +103,16 @@ class SimpleDatasetLoader:
         if pre_img.shape[-1] > 3:  # Ensure 3 channels
             pre_img = pre_img[:, :, :3]
 
-        # Load post-event SAR image
+        # load post-event SAR image
         post_path = (
             self.root_dir / self.split / "post-event" / f"{image_id}_post_disaster.tif"
         )
         post_img = self.load_tiff_data(str(post_path))
 
-        # Convert single-channel to 3-channel for consistent processing
         if post_img.shape[-1] == 1:
             post_img = np.repeat(post_img, 3, axis=2)
 
-        # Load damage label
+        # damage label
         label_path = (
             self.root_dir / self.split / "target" / f"{image_id}_building_damage.tif"
         )
@@ -161,7 +159,7 @@ def extract_patch_metadata(
     h, w = pre_img.shape[:2]
     pad_size = (context_patch_size - roi_patch_size) // 2
 
-    # Calculate valid extraction region
+    # get the valid extraction region
     start_y = pad_size
     start_x = pad_size
     end_y = h - pad_size - roi_patch_size + 1
@@ -171,7 +169,6 @@ def extract_patch_metadata(
         logger.warning(f"Image {image_id} too small for extraction: {h}x{w}")
         return [], [], [], [], [], []
 
-    # Initialize lists to collect metadata
     image_ids = []
     roi_positions = []
     context_positions = []
@@ -179,13 +176,12 @@ def extract_patch_metadata(
     damage_ratios = []
     has_building_flags = []
 
-    # Process each potential patch
     for y in range(start_y, end_y, stride):
         for x in range(start_x, end_x, stride):
-            # Check for valid pixels in ROI
+            # check for valid pixels in ROI
             roi = pre_img[y : y + roi_patch_size, x : x + roi_patch_size]
 
-            # Skip if ROI contains NaN values
+            # skip if ROI contains NaN values
             if hasattr(roi, "ndim") and roi.ndim > 2:
                 valid_mask = ~np.isnan(roi).any(axis=2)
                 valid_ratio = np.sum(valid_mask) / valid_mask.size
@@ -193,7 +189,7 @@ def extract_patch_metadata(
                 if valid_ratio < min_valid_pixels:
                     continue
 
-            # Process the label ROI
+            # process the label ROI
             label_roi = label[y : y + roi_patch_size, x : x + roi_patch_size]
 
             if label_roi.ndim > 2:
@@ -201,11 +197,10 @@ def extract_patch_metadata(
             else:
                 label_roi_flat = label_roi
 
-            # Skip invalid labels
             if np.isnan(label_roi_flat).all() or (label_roi_flat == 0).all():
                 continue
 
-            # Calculate damage ratio
+            # damage ratio
             label_binary = np.where(label_roi_flat > 1, 1, 0)
             damage_pixels = np.sum(label_binary > 0)
             total_valid_pixels = np.sum(~np.isnan(label_roi_flat))
@@ -220,7 +215,7 @@ def extract_patch_metadata(
             building_ratio = building_pixels / total_valid_pixels
             has_building = building_ratio >= building_threshold
 
-            # Extract context coords for later use
+            # context coords
             ctx_y_start = y - pad_size
             ctx_x_start = x - pad_size
             ctx_y_end = y + roi_patch_size + pad_size
@@ -273,24 +268,21 @@ def process_and_save_metadata(
     """
     np.random.seed(seed)
 
-    # Convert lists to arrays
     all_image_ids = np.array(all_image_ids, dtype=object)
     all_roi_positions = np.array(all_roi_positions, dtype=np.int32)
     all_context_positions = np.array(all_context_positions, dtype=np.int32)
     all_is_positive = np.array(all_is_positive, dtype=np.bool_)
     all_damage_ratios = np.array(all_damage_ratios, dtype=np.float32)
-    all_has_building = np.array(all_has_building, dtype=np.bool_)  # Conversion en array
+    all_has_building = np.array(all_has_building, dtype=np.bool_)
 
-    # Create random permutation for splitting
+    # random permutation for splitting
     n_samples = len(all_image_ids)
     indices = np.random.permutation(n_samples)
 
-    # Split into train and validation sets
     train_split_idx = int(n_samples * train_ratio)
     train_indices = indices[:train_split_idx]
     val_indices = indices[train_split_idx:]
 
-    # Process and save each split
     train_stats = save_split_metadata(
         all_image_ids[train_indices],
         all_roi_positions[train_indices],
@@ -342,7 +334,6 @@ def save_split_metadata(
     Returns:
         Dictionary with statistics
     """
-    # Get number of items
     n_items = len(image_ids)
 
     if n_items == 0:
@@ -357,15 +348,14 @@ def save_split_metadata(
             "building_ratio": 0,
         }
 
-    # Get indices of positive and negative samples
+    # indices of positive and negative samples
     positive_indices = np.where(is_positive)[0]
     negative_indices = np.where(~is_positive)[0]
 
-    # Get indices of patches with and without buildings
+    # indices of patches with and without buildings
     building_indices = np.where(has_building)[0]
     non_building_indices = np.where(~has_building)[0]
 
-    # Save arrays
     np.save(output_dir / f"{split}_image_ids.npy", image_ids)
     np.save(output_dir / f"{split}_roi_positions.npy", roi_positions)
     np.save(output_dir / f"{split}_context_positions.npy", context_positions)
@@ -373,15 +363,13 @@ def save_split_metadata(
     np.save(output_dir / f"{split}_damage_ratios.npy", damage_ratios)
     np.save(output_dir / f"{split}_has_building.npy", has_building)
 
-    # Save positive and negative indices separately
     np.save(output_dir / f"{split}_positive_indices.npy", positive_indices)
     np.save(output_dir / f"{split}_negative_indices.npy", negative_indices)
 
-    # Save building and non-building indices separately
     np.save(output_dir / f"{split}_building_indices.npy", building_indices)
     np.save(output_dir / f"{split}_non_building_indices.npy", non_building_indices)
 
-    # Calculate statistics
+    # statistics
     n_positive = len(positive_indices)
     n_negative = len(negative_indices)
     pos_ratio = n_positive / n_items if n_items > 0 else 0
@@ -389,7 +377,6 @@ def save_split_metadata(
     n_building = len(building_indices)
     building_ratio = n_building / n_items if n_items > 0 else 0
 
-    # Save summary
     stats = {
         "total_patches": n_items,
         "positive_patches": n_positive,
@@ -454,7 +441,6 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
 
-    # Extract patch parameters from config
     roi_patch_size = config.get("roi_patch_size", 16)
     context_patch_size = config.get("context_patch_size", 256)
     stride = config.get("patch_stride", 8)
@@ -471,7 +457,6 @@ def main():
         select_disaster=args.select_disaster,
     )
 
-    # Initialize lists to collect all metadata
     all_image_ids = []
     all_roi_positions = []
     all_context_positions = []
@@ -479,7 +464,6 @@ def main():
     all_damage_ratios = []
     all_has_building = []
 
-    # Process each image
     for idx in tqdm(range(len(dataset)), desc="Processing images"):
         sample = dataset[idx]
         image_id = sample["image_id"]
@@ -488,13 +472,12 @@ def main():
         post_img = sample["post_image"]
         label = sample["label"]
 
-        # Convert tensors to numpy if needed
         if isinstance(pre_img, torch.Tensor):
             pre_img = pre_img.numpy().transpose(1, 2, 0)
             post_img = post_img.numpy().transpose(1, 2, 0)
             label = label.numpy()
 
-        # Extract metadata for this image directly into arrays
+        # extract metadata for this image directly into arrays
         (img_ids, roi_pos, ctx_pos, is_pos, dmg_ratios, has_building) = (
             extract_patch_metadata(
                 pre_img,
@@ -510,7 +493,6 @@ def main():
             )
         )
 
-        # Extend our main lists
         all_image_ids.extend(img_ids)
         all_roi_positions.extend(roi_pos)
         all_context_positions.extend(ctx_pos)
@@ -520,7 +502,6 @@ def main():
 
         logger.info(f"Image {image_id}: Found {len(img_ids)} valid patches")
 
-    # Process and save all metadata
     stats = process_and_save_metadata(
         all_image_ids,
         all_roi_positions,
@@ -533,7 +514,6 @@ def main():
         args.seed,
     )
 
-    # Save patch extractor config for reference
     config_summary = {
         "roi_patch_size": roi_patch_size,
         "context_patch_size": context_patch_size,

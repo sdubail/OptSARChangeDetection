@@ -17,7 +17,7 @@ class OpticalEncoder(nn.Module):
         """
         super(OpticalEncoder, self).__init__()
 
-        # Load pretrained ResNet18 or ResNet34
+        # load pretrained ResNet18 or ResNet34
         if resnet_version == 18:
             print("Loading resnet 18")
             resnet = models.resnet18(pretrained=True)
@@ -27,23 +27,21 @@ class OpticalEncoder(nn.Module):
         else:
             raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
 
-        # Freeze all layers before layer4 if freeze_resnet is True
+        # freeze all layers before layer4 if freeze_resnet is True
         if freeze_resnet:
             for name, param in resnet.named_parameters():
                 if not any(layer in name for layer in ["layer4", "fc"]):
                     param.requires_grad = False
 
-        # Modify first conv layer for input channels
+        # modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
             in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
         )
 
-        # Initialize from pretrained
-        # useful as RGB optical images are close to the generalization scope of ResNet
+        # initialize from pretrained = useful as RGB optical images are close to the generalization scope of ResNet
         if in_channels == 3:
             self.conv1.weight.data = resnet.conv1.weight.data
         else:
-            # initialize new channels with mean of RGB weights
             self.conv1.weight.data[:, :3, :, :] = resnet.conv1.weight.data
             if in_channels > 3:
                 for i in range(3, in_channels):
@@ -56,7 +54,7 @@ class OpticalEncoder(nn.Module):
             for param in self.conv1.parameters():
                 param.requires_grad = False
 
-        # rRest of the network
+        # rest of the network
         self.bn1 = resnet.bn1
         self.relu = resnet.relu
         self.maxpool = resnet.maxpool
@@ -113,7 +111,6 @@ class SAREncoder(nn.Module):
         """
         super(SAREncoder, self).__init__()
 
-        # Load pretrained ResNet18 or ResNet34
         if resnet_version == 18:
             print("Loading resnet 18")
             resnet = models.resnet18(pretrained=True)
@@ -123,29 +120,25 @@ class SAREncoder(nn.Module):
         else:
             raise ValueError(f"{resnet_version} - is not a valid resnet version value.")
 
-        # Freeze all layers before layer4 if freeze_resnet is True
         if freeze_resnet:
             for name, param in resnet.named_parameters():
                 if not any(layer in name for layer in ["layer4", "fc"]):
                     param.requires_grad = False
 
-        # modify first conv layer for input channels
         self.conv1 = nn.Conv2d(
             in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
         )
 
-        # Initialize from pretrained
-        # For SAR images, initialize with mean of RGB channels
+        # Initialize from pretrained -> SAR = mean of RGB channels
         self.conv1.weight.data = resnet.conv1.weight.data.mean(
             dim=1, keepdim=True
         ).repeat(1, in_channels, 1, 1)
 
-        # freeze the first layer if freeze_resnet is True
         if freeze_resnet:
             for param in self.conv1.parameters():
                 param.requires_grad = False
 
-        # Rest of the network
+        # rest of the network
         self.bn1 = resnet.bn1
         self.relu = resnet.relu
         self.maxpool = resnet.maxpool
@@ -153,7 +146,6 @@ class SAREncoder(nn.Module):
         self.layer1 = resnet.layer1
         self.layer2 = resnet.layer2
 
-        # modify stride in layer3 and layer4
         self.layer3 = self._modify_layer_stride(resnet.layer3, stride=1)
         self.layer4 = self._modify_layer_stride(resnet.layer4, stride=1)
 

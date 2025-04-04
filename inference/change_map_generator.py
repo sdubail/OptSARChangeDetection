@@ -1,6 +1,5 @@
 import logging
-from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -79,13 +78,13 @@ class PatchDataset(Dataset):
         """Get a patch pair at the specified position."""
         y, x = self.patch_positions[idx]
 
-        # Extract context patch coordinates
+        # extract context patch coordinates
         ctx_y_start = y - self.pad_size
         ctx_x_start = x - self.pad_size
         ctx_y_end = y + self.roi_patch_size + self.pad_size
         ctx_x_end = x + self.roi_patch_size + self.pad_size
 
-        # Extract patches
+        # extract patches
         pre_patch = self.pre_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
         post_patch = self.post_img[ctx_y_start:ctx_y_end, ctx_x_start:ctx_x_end].copy()
 
@@ -94,7 +93,6 @@ class PatchDataset(Dataset):
             pre_patch = transformed["pre_image"]
             post_patch = transformed["post_image"]
 
-        # Convert to tensor with normalization
         pre_patch = self._to_tensor_optical(pre_patch)
         post_patch = self._to_tensor_sar(post_patch)
 
@@ -108,12 +106,11 @@ class PatchDataset(Dataset):
         """Convert optical image to tensor with normalization."""
         img = img.astype(np.float32)
 
-        # Per-channel normalization
+        # normalization
         means = img.mean(axis=(0, 1), keepdims=True)
         stds = img.std(axis=(0, 1), keepdims=True) + 1e-8
         img = (img - means) / stds
 
-        # Convert to tensor with channel-first format
         img = torch.from_numpy(img.transpose(2, 0, 1))
         return img
 
@@ -200,8 +197,6 @@ def visualize_damage(
         RGB visualization image
     """
     if not is_patch:
-        # Standard damage level visualization (original function)
-        # Define colors for damage levels (0 to 4)
         colors = np.array(
             [
                 [0, 0, 0],  # 0: No damage (black)
@@ -212,46 +207,36 @@ def visualize_damage(
             ]
         )
 
-        # Create RGB image
         h, w = damage_img.shape
         rgb = np.zeros((h, w, 3), dtype=np.uint8)
 
-        # Fill with colors based on damage values
+        # colors based on damage values
         for i in range(5):  # 5 damage levels
             mask = damage_img == i
             if np.any(mask):
                 rgb[mask] = colors[i]
     else:
-        # Patch-level contrastive label visualization
         h, w = damage_img.shape
         pad_size = (context_patch_size - roi_patch_size) // 2
-        # Create accumulation map for patch labels and count map for averaging
         label_map = np.zeros((h, w), dtype=np.float32)
         count_map = np.zeros((h, w), dtype=np.int32)
 
-        # Create binary version of the damage map (any damage > 0)
         label_binary = np.where(damage_img > 1, 1, 0)
 
-        # Calculate valid extraction region
         start_y = pad_size
         start_x = pad_size
         end_y = h - pad_size - roi_patch_size + 1
         end_x = w - pad_size - roi_patch_size + 1
 
         if start_y >= end_y or start_x >= end_x:
-            # Image too small for extraction
-            # Return a red "error" image
             rgb = np.zeros((h, w, 3), dtype=np.uint8)
             rgb[:, :, 0] = 255
             return rgb
 
-        # Process each patch
         for y in range(start_y, end_y, stride):
             for x in range(start_x, end_x, stride):
-                # Extract ROI
                 roi = label_binary[y : y + roi_patch_size, x : x + roi_patch_size]
 
-                # Calculate damage ratio in this ROI
                 damage_pixels = np.sum(roi > 0)
                 total_valid_pixels = roi.size - np.sum(np.isnan(roi))
 
@@ -261,20 +246,16 @@ def visualize_damage(
                 damage_ratio = damage_pixels / total_valid_pixels
                 is_positive = int(damage_ratio <= pos_threshold)
 
-                # Assign the patch label (0 or 1) to all pixels in the ROI region
-                # This is where patches overlap and will be averaged
                 label_map[y : y + roi_patch_size, x : x + roi_patch_size] += (
                     1 - is_positive
                 )
                 count_map[y : y + roi_patch_size, x : x + roi_patch_size] += 1
 
-        # Average overlapping regions
+        # average overlap
         label_map = np.divide(
             label_map, count_map, out=np.zeros_like(label_map), where=count_map > 0
         )
 
-        # Create RGB visualization (grayscale)
-        # 0 (negative/damaged) = black, 1 (positive/intact) = white
         rgb = np.zeros((h, w, 3), dtype=np.uint8)
 
         grayscale = (label_map * 255).astype(np.uint8)
@@ -301,20 +282,17 @@ def dome_window(size, power=2):
     """
     height, width = size
 
-    # Normalized grid: x and y in [-1, 1]
     y = np.linspace(-1, 1, height)
     x = np.linspace(-1, 1, width)
     xx, yy = np.meshgrid(x, y)
 
-    # Compute distance to corners (max distance = sqrt(2))
+    # compute distance to corners (max distance = sqrt(2))
     radius = np.sqrt(xx**2 + yy**2) / np.sqrt(
         2
-    )  # Normalize so that corners have radius = 1
+    )  # normalize so that corners have radius = 1
 
-    # Dome function: maximum at center, zero at corners
+    # dome
     window = 1 - (radius**power)
-
-    # Ensure no negative values
     window = np.clip(window, 0, None)
 
     return window
@@ -352,7 +330,7 @@ def create_change_map(
 
     model.eval()
 
-    # Create dataset and dataloader for patches
+    # dataset and dataloader
     patch_dataset = PatchDataset(
         pre_img=pre_img,
         post_img=post_img,
@@ -373,34 +351,29 @@ def create_change_map(
         pin_memory=True,
     )
 
-    # Create an accumulation map for change scores and a count map for averaging
+    # accumulation map for change scores + count map for averaging
     height, width = pre_img.shape[:2]
     change_map = np.zeros((height, width), dtype=np.float32)
     count_map = np.zeros(
         (height, width), dtype=np.int32 if window_method == "classic" else np.float32
     )
 
-    # Process patches in batches
     with torch.no_grad():
         for batch in tqdm(patch_loader, desc="Generating change map"):
             pre_patches = batch["pre_patch"].to(device)
             post_patches = batch["post_patch"].to(device)
             positions = batch["position"]
 
-            # Forward pass through model
             outputs = model(optical=pre_patches, sar=post_patches)
 
-            # Get change scores
             if "change_score" in outputs:
                 change_scores = outputs["change_score"].cpu().numpy()
 
-            # Accumulate change scores to the change map
-
+            # accumulate change scores to the change map
             for i, (y, x) in enumerate(zip(positions[0], positions[1])):
                 score = change_scores[i]
 
-                # Update the region of interest in the change map
-                # For each patch's ROI, add the change score
+                # update the region of interest in the change map
                 roi_y_end = y + roi_patch_size
                 roi_x_end = x + roi_patch_size
 
@@ -416,7 +389,7 @@ def create_change_map(
                 change_map[y:roi_y_end, x:roi_x_end] += score * window
                 count_map[y:roi_y_end, x:roi_x_end] += window
 
-    # Average overlapping regions
+    # average overlap
     change_map = np.divide(
         change_map, count_map, out=np.zeros_like(change_map), where=count_map > 0
     )
@@ -438,20 +411,16 @@ def compute_iou(
     Returns:
         IoU score, precision, and recall
     """
-    # Ensure binary maps
     pred_binary = pred_map > threshold
-
-    # Target is already binary (1 for damage, >0 for any level of damage)
     target_binary = target_map > 0
 
-    # Calculate intersection and union
+    # intersection / union
     intersection = np.logical_and(pred_binary, target_binary).sum()
     union = np.logical_or(pred_binary, target_binary).sum()
 
-    # Calculate IoU, precision, and recall
     iou = intersection / union if union > 0 else 0
 
-    # Calculate precision and recall
+    #  precision and recall
     true_positives = intersection
     false_positives = pred_binary.sum() - true_positives
     false_negatives = target_binary.sum() - true_positives
