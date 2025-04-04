@@ -151,9 +151,9 @@ model:
 # Training parameters
 training:
   batch_size: 64
-  learning_rate: 0.0001
+  learning_rate: 0.00001
   weight_decay: 0.0001
-  num_epochs: 10
+  num_epochs: 9
   temperature: 0.07             # Temperature for contrastive loss
 ```
 
