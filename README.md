@@ -1,5 +1,3 @@
-I'll create a comprehensive README that reflects the current state of your project based on the repository contents. Here's a new README that accurately describes your OptSARChangeDetection project:
-
 # 🛰️ OptSARChangeDetection
 
 Multimodal change detection framework using supervised contrastive learning for optical and SAR remote sensing images.
